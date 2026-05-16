@@ -12,6 +12,7 @@
             --text-main: #ffffff;
             --text-sub: #8b8e92;
             --red: #ff4d4d;
+            --gold: #f0a500;
         }
         * { box-sizing: border-box; }
         body {
@@ -64,15 +65,29 @@
             font-size: 10px; padding: 2px 8px; border-radius: 10px;
             background: #1e2124; color: var(--text-sub); font-weight: normal;
         }
+        .badge.active { background: #0d2e1f; color: var(--accent-green); }
 
         /* Table */
         table { width: 100%; border-collapse: collapse; }
-        td { padding: 11px 0; font-size: 13px; border-bottom: 1px solid #1e2124; }
+        td { padding: 10px 0; font-size: 13px; border-bottom: 1px solid #1e2124; }
         td:last-child { text-align: right; font-weight: bold; }
         .up   { color: var(--accent-green); }
         .down { color: var(--red); }
-        .hold { color: #f0a500; }
-        .sub  { color: var(--text-sub); font-size: 11px; }
+        .hold { color: var(--gold); }
+        .sub  { color: var(--text-sub); font-size: 11px; margin-top: 2px; }
+        .star { color: var(--gold); font-size: 12px; margin-left: 4px; }
+
+        /* Candidate tag */
+        .tag-pending {
+            display: inline-block; font-size: 10px; padding: 2px 7px;
+            border-radius: 8px; background: #0d2e1f; color: var(--accent-green);
+            font-weight: bold; letter-spacing: 0.5px;
+        }
+        .tag-watch {
+            display: inline-block; font-size: 10px; padding: 2px 7px;
+            border-radius: 8px; background: #2e2000; color: var(--gold);
+            font-weight: bold;
+        }
 
         /* Loading / Error */
         .msg-row td { color: var(--text-sub); font-size: 12px; text-align: center; padding: 40px 0; }
@@ -106,7 +121,7 @@
 
     <div class="summary-grid">
         <div class="summary-card">
-            <div class="label">오늘 주도주 스캔</div>
+            <div class="label">최근 스캔 주도주</div>
             <div class="value" id="scan-count">-</div>
         </div>
         <div class="summary-card">
@@ -119,26 +134,28 @@
         </div>
         <div class="summary-card">
             <div class="label">알고리즘 상태</div>
-            <div class="value" style="font-size:16px; color:var(--accent-green)">ACTIVE</div>
+            <div class="value" style="font-size:16px; color:var(--accent-green)">NH-Sniper</div>
         </div>
     </div>
 
     <div class="main-grid">
+        <!-- 왼쪽: 관심종목 -->
         <div class="content-card">
             <div class="card-header">
-                <span>실시간 주도주 Log</span>
-                <span class="badge" id="lead-badge">최신 5건</span>
+                <span>관심종목 (S-Class 스캔 결과)</span>
+                <span class="badge" id="lead-badge">최신 10건</span>
             </div>
             <table id="lead-stock-table">
-                <tr class="msg-row"><td colspan="2">데이터 로딩 중...</td></tr>
+                <tr class="msg-row"><td colspan="3">데이터 로딩 중...</td></tr>
             </table>
         </div>
+        <!-- 오른쪽: 눌림목 매매 후보 -->
         <div class="content-card">
             <div class="card-header">
-                <span>최근 매매 내역</span>
-                <span class="badge" id="trade-badge">최신 5건</span>
+                <span>눌림목 매매 후보</span>
+                <span class="badge active" id="cand-badge">NH-Sniper 조건</span>
             </div>
-            <table id="trade-log-table">
+            <table id="candidate-table">
                 <tr class="msg-row"><td colspan="2">데이터 로딩 중...</td></tr>
             </table>
         </div>
@@ -156,12 +173,11 @@
 </div>
 
 <script>
-    // 주도주 Log — 0_주도주_Log 탭
+    // ── CSV 공개 URL ────────────────────────────────────────────────────
     const LEAD_CSV_URL  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRSUtXRGORylv3kPfUuzrl9RtNyS-okxqGLqGc7f18aF6H3ycFwNwq-_OlZIUN6QwJVoszvWKwxZNPh/pub?gid=1222820839&single=true&output=csv';
-    // 매매일지 — 1D-Rebound 탭
     const TRADE_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSqu0fljAyaRMgIgpKO37r9VxiBQJXoBPLZVg8k31u8L5R8vAxtmGqajSFAcZcfL7DWYy449VNfCNsc/pub?gid=1786490570&single=true&output=csv';
 
-    // CSV 파서 — 쉼표 포함 필드(따옴표 처리) 대응
+    // ── CSV 파서 (따옴표·쉼표 포함 필드 대응) ─────────────────────────
     function parseCsv(text) {
         const rows = [];
         const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
@@ -186,22 +202,40 @@
         return rows;
     }
 
-    // 오늘 날짜 YYYY-MM-DD
+    // ── 헤더 → 컬럼 인덱스 맵 ────────────────────────────────────────
+    // 실제 시트 헤더(8컬럼): 날짜,종목코드,종목명,종가,상승률 (%),거래대금 (억),거래대금 순위,비고
+    // CLAUDE.md 확장 스키마(11컬럼): 날짜,시간,종목코드,종목명,현재가,등락률,거래량비,거래대금,조건,기관수급,매매상태
+    function buildLeadColMap(header) {
+        const m = {};
+        header.forEach((h, i) => { m[h.trim()] = i; });
+        return {
+            date:       m['날짜']         ?? 0,
+            code:       m['종목코드']     ?? (m['시간'] !== undefined ? 2 : 1),
+            name:       m['종목명']       ?? (m['시간'] !== undefined ? 3 : 2),
+            price:      m['현재가']       ?? m['종가'] ?? (m['시간'] !== undefined ? 4 : 3),
+            rate:       m['등락률']       ?? m['상승률 (%)'] ?? (m['시간'] !== undefined ? 5 : 4),
+            volRatio:   m['거래량비']     ?? null,
+            amt:        m['거래대금']     ?? m['거래대금 (억)'] ?? (m['시간'] !== undefined ? 7 : 5),
+            inst:       m['기관수급']     ?? null,
+            status:     m['매매상태']     ?? null,
+            remark:     m['비고']         ?? (m['시간'] !== undefined ? null : 7),
+        };
+    }
+
+    // ── 유틸 ─────────────────────────────────────────────────────────
     function today() {
         const d = new Date();
         return d.getFullYear() + '-' +
                String(d.getMonth() + 1).padStart(2, '0') + '-' +
                String(d.getDate()).padStart(2, '0');
     }
-
-    // XSS 방지
     function esc(str) {
         return String(str)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;')
             .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    // 메인 업데이트
+    // ── 메인 업데이트 ─────────────────────────────────────────────────
     async function updateDashboard() {
         try {
             const [leadRes, tradeRes] = await Promise.all([
@@ -211,11 +245,18 @@
             if (!leadRes.ok)  throw new Error('주도주 Log 로딩 실패 (' + leadRes.status + ')');
             if (!tradeRes.ok) throw new Error('매매일지 로딩 실패 (' + tradeRes.status + ')');
 
-            const leadRows  = parseCsv(await leadRes.text()).slice(1);   // 헤더 제외
-            const tradeRows = parseCsv(await tradeRes.text()).slice(1);  // 헤더 제외
+            const leadAll   = parseCsv(await leadRes.text());
+            const tradeAll  = parseCsv(await tradeRes.text());
 
-            renderLeadStocks(leadRows);
-            renderTrades(tradeRows);
+            const leadHeader = leadAll[0] || [];
+            const leadRows   = leadAll.slice(1);
+            const tradeRows  = tradeAll.slice(1);
+
+            const C = buildLeadColMap(leadHeader);
+
+            renderLeadStocks(leadRows, C);
+            renderCandidates(leadRows, C);
+            renderSummaryTrades(tradeRows);
 
             document.getElementById('live-status').textContent = '● SYSTEM LIVE';
             document.getElementById('live-status').className   = '';
@@ -230,49 +271,134 @@
         }
     }
 
-    // 주도주 Log 렌더링
-    // 컬럼: 날짜(0) 종목코드(1) 종목명(2) 종가(3) 상승률%(4) 거래대금억(5) 순위(6) 비고(7)
-    function renderLeadStocks(rows) {
-        const todayStr  = today();
-        const todayRows = rows.filter(r => r[0] === todayStr);
-        const display   = todayRows.length > 0 ? todayRows : rows.slice(-5).reverse();
-
-        document.getElementById('scan-count').textContent =
-            todayRows.length > 0 ? todayRows.length : '-';
-        document.getElementById('lead-badge').textContent =
-            todayRows.length > 0 ? '오늘 ' + todayRows.length + '건' : '최신 5건';
-
-        if (display.length === 0 || !display[0][0]) {
+    // ── 왼쪽: 관심종목 (S-Class 스캔 결과) — 최신 10건 ──────────────
+    function renderLeadStocks(rows, C) {
+        if (!rows.length || !rows[0][C.date]) {
+            document.getElementById('scan-count').textContent = '0';
             document.getElementById('lead-stock-table').innerHTML =
-                '<tr class="msg-row"><td colspan="2">기록된 데이터가 없습니다.</td></tr>';
+                '<tr class="msg-row"><td colspan="3">기록된 데이터가 없습니다.</td></tr>';
             return;
         }
 
+        // 최근 스캔일 기준으로 건수 집계
+        const allDates  = rows.map(r => r[C.date]).filter(Boolean);
+        const latestDate = allDates.reduce((a, b) => (a > b ? a : b), '');
+        const latestRows = rows.filter(r => r[C.date] === latestDate);
+
+        document.getElementById('scan-count').textContent = latestRows.length || '-';
+        document.getElementById('lead-badge').textContent =
+            latestDate ? latestDate + ' · ' + latestRows.length + '건' : '최신 10건';
+
+        // 최신 10건 (전체 기준)
+        const display = rows.slice(-10).reverse();
+
         document.getElementById('lead-stock-table').innerHTML = display.map(r => {
-            const rate = parseFloat(r[4]) || 0;
+            const rate = parseFloat(r[C.rate]) || 0;
             const cls  = rate >= 0 ? 'up' : 'down';
             const sign = rate >= 0 ? '+' : '';
+            const price = Number(r[C.price] || 0).toLocaleString();
+            const amt   = r[C.amt] ? Number(r[C.amt]).toLocaleString() + '억' : '-';
             return `<tr>
                 <td>
-                    <div>${esc(r[2])}</div>
-                    <div class="sub">${esc(r[1])} &middot; ${esc(r[0])}</div>
+                    <div>${esc(r[C.name])}</div>
+                    <div class="sub">${esc(r[C.code])} &middot; ${esc(r[C.date])}</div>
                 </td>
-                <td class="${cls}">
+                <td class="${cls}" style="text-align:center; white-space:nowrap;">
                     ${sign}${rate.toFixed(2)}%<br>
-                    <span class="sub" style="font-weight:normal">${Number(r[3]||0).toLocaleString()}원</span>
+                    <span class="sub" style="font-weight:normal">${amt}</span>
+                </td>
+                <td>
+                    <div>${price}원</div>
                 </td>
             </tr>`;
         }).join('');
     }
 
-    // 매매일지 렌더링
-    // 컬럼: Trade ID(0) 상태(1) 종목코드(2) 종목명(3) 매수일자(4) 매수단가(5)
-    //       매수수량(6) 투자금액(7) 매도일자(8) 매도단가(9) 수익률%(10) 수익금(11) 비고(12)
-    function renderTrades(rows) {
+    // ── 오른쪽: 눌림목 매매 후보 ──────────────────────────────────────
+    // 조건: 등락률 ≤ 3% (+ 거래량비 ≤ 50%, 기관수급 — 컬럼 있으면 자동 적용)
+    function renderCandidates(rows, C) {
+        if (!rows.length) {
+            document.getElementById('candidate-table').innerHTML =
+                '<tr class="msg-row"><td colspan="2">오늘의 매매 후보가 없습니다.</td></tr>';
+            return;
+        }
+
+        // 최신 스캔일 종목만 대상
+        const allDates   = rows.map(r => r[C.date]).filter(Boolean);
+        const latestDate = allDates.reduce((a, b) => (a > b ? a : b), '');
+        let pool = rows.filter(r => r[C.date] === latestDate);
+        if (!pool.length) pool = rows.slice(-10);
+
+        const candidates = pool.filter(r => {
+            const rate = parseFloat(r[C.rate]) || 0;
+            if (rate > 3.0) return false;
+
+            // 거래량비 컬럼이 있으면 추가 필터
+            if (C.volRatio !== null) {
+                const vr = parseFloat(r[C.volRatio]) || 999;
+                if (vr > 50.0) return false;
+            }
+
+            // 매매상태 컬럼이 있으면 PENDING만
+            if (C.status !== null) {
+                const st = String(r[C.status] || '').trim().toUpperCase();
+                if (st && st !== 'PENDING') return false;
+            }
+
+            return true;
+        });
+
+        if (!candidates.length) {
+            document.getElementById('cand-badge').textContent = '0건';
+            document.getElementById('candidate-table').innerHTML =
+                '<tr class="msg-row"><td colspan="2">오늘의 매매 후보가 없습니다.</td></tr>';
+            return;
+        }
+
+        document.getElementById('cand-badge').textContent = candidates.length + '건';
+
+        document.getElementById('candidate-table').innerHTML = candidates.map(r => {
+            const rate = parseFloat(r[C.rate]) || 0;
+            const cls  = rate >= 0 ? 'up' : 'down';
+            const sign = rate >= 0 ? '+' : '';
+
+            // 기관수급 ★
+            let instStar = '';
+            if (C.inst !== null) {
+                const instVal = parseFloat(r[C.inst]) || 0;
+                if (instVal > 0) instStar = '<span class="star">★</span>';
+            } else if (C.remark !== null) {
+                // 비고 컬럼에 '기관' 포함 시 ★
+                const rem = String(r[C.remark] || '');
+                if (rem.includes('기관')) instStar = '<span class="star">★</span>';
+            }
+
+            // 거래량비 표시
+            let volLabel = '';
+            if (C.volRatio !== null) {
+                const vr = parseFloat(r[C.volRatio]) || 0;
+                volLabel = ` · 거래량 ${vr.toFixed(0)}%`;
+            }
+
+            const statusTag = C.status !== null
+                ? `<span class="tag-pending">${esc(r[C.status] || 'PENDING')}</span>`
+                : `<span class="tag-watch">관심</span>`;
+
+            return `<tr>
+                <td>
+                    <div>${esc(r[C.name])}${instStar}</div>
+                    <div class="sub">${esc(r[C.code])} &middot; <span class="${cls}">${sign}${rate.toFixed(2)}%</span>${volLabel}</div>
+                </td>
+                <td>${statusTag}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    // ── 요약 카드: 보유 종목 수 + 이달 수익률 (매매일지 기반) ─────────
+    function renderSummaryTrades(rows) {
         const holding = rows.filter(r => r[1] === '보유');
         document.getElementById('holding-count').textContent = holding.length;
 
-        // 이달 완료 거래 평균 수익률
         const thisMonth = today().slice(0, 7);
         const monthDone = rows.filter(r => r[1] === '완료' && String(r[8]).startsWith(thisMonth));
         if (monthDone.length > 0) {
@@ -280,36 +406,9 @@
             const el  = document.getElementById('monthly-profit');
             el.textContent = (avg >= 0 ? '+' : '') + avg.toFixed(2) + '%';
             el.className   = 'value ' + (avg >= 0 ? 'up' : 'down');
+        } else {
+            document.getElementById('monthly-profit').textContent = '-%';
         }
-
-        // 최신 5건 (완료 우선, 없으면 보유)
-        const done    = rows.filter(r => r[1] === '완료').slice(-5).reverse();
-        const display = done.length > 0 ? done : holding.slice(-5).reverse();
-
-        document.getElementById('trade-badge').textContent = '최신 ' + display.length + '건';
-
-        if (display.length === 0 || !display[0][0]) {
-            document.getElementById('trade-log-table').innerHTML =
-                '<tr class="msg-row"><td colspan="2">최근 매매 내역이 없습니다.</td></tr>';
-            return;
-        }
-
-        document.getElementById('trade-log-table').innerHTML = display.map(r => {
-            const isHold   = r[1] === '보유';
-            const profitRt = parseFloat(r[10]) || 0;
-            const cls      = isHold ? 'hold' : (profitRt >= 0 ? 'up' : 'down');
-            const label    = isHold ? '보유 중' : (profitRt >= 0 ? '+' : '') + profitRt.toFixed(2) + '%';
-            return `<tr>
-                <td>
-                    <div>${esc(r[3])}</div>
-                    <div class="sub">${esc(r[2])}${r[4] ? ' &middot; 매수 ' + esc(r[4]) : ''}</div>
-                </td>
-                <td class="${cls}">
-                    ${label}<br>
-                    <span class="sub" style="font-weight:normal">${Number(r[5]||0).toLocaleString()}원</span>
-                </td>
-            </tr>`;
-        }).join('');
     }
 
     // 최초 로딩 + 60초마다 자동 갱신

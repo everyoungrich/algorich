@@ -226,15 +226,21 @@ class KISBroker(BaseBroker):
             write_log(f"[에러] 52주 신고가 검증 중 차트 데이터 오류: {e}")
             return False
 
-    def scan_s_class_targets(self):
+    def scan_s_class_targets(self, target_date: str = None):
+        """
+        target_date: "YYYYMMDD" 형식 (None이면 오늘). 과거 날짜 백필 가능.
+        """
         token = self.get_access_token()
         if not token: return []
-        
-        write_log("[@Scanner] V3.0 S-Class 주도주 스캐닝 시작 (종가 기준 1회 실행)")
+
+        date_label = target_date or datetime.now().strftime("%Y%m%d")
+        log_date_str = datetime.strptime(date_label, "%Y%m%d").strftime("%Y-%m-%d")
+        write_log(f"[@Scanner] V3.1 S-Class 주도주 스캐닝 시작 (기준일: {log_date_str})")
+
         url_amt = f"{self.base_url}/uapi/domestic-stock/v1/quotations/volume-rank"
         headers = {
             "content-type": "application/json", "authorization": f"Bearer {token}",
-            "appkey": self.app_key, "appsecret": self.app_secret, "custtype": "P", 
+            "appkey": self.app_key, "appsecret": self.app_secret, "custtype": "P",
             "tr_id": "FHPST01710000"
         }
         params = {
@@ -242,12 +248,13 @@ class KISBroker(BaseBroker):
             "FID_INPUT_ISCD": "0000", "FID_DIV_CLS_CODE": "0",
             "FID_BLNG_CLS_CODE": "3",  # [핵심] 3: 거래금액순 (거래대금 상위 정렬)
             "FID_TRGT_CLS_CODE": "111111111", "FID_TRGT_EXLS_CLS_CODE": "000000",
-            "FID_INPUT_PRICE_1": "", "FID_INPUT_PRICE_2": "", "FID_VOL_CNT": "", "FID_INPUT_DATE_1": ""
+            "FID_INPUT_PRICE_1": "", "FID_INPUT_PRICE_2": "", "FID_VOL_CNT": "",
+            "FID_INPUT_DATE_1": target_date or ""
         }
-        
+
         res = safe_request('GET', url_amt, gs_manager=self.gs_manager, headers=headers, params=params, timeout=10)
         raw_list = res.json().get("output", []) if res and res.status_code == 200 else []
-        
+
         candidates = []
         for item in raw_list:
             code = item.get("mksc_shrn_iscd", "")
@@ -256,49 +263,48 @@ class KISBroker(BaseBroker):
             vol = float(item.get("acml_vol", 0))
             amt = float(item.get("acml_tr_pbmn", 0))
             if amt == 0: amt = price * vol
-                
-            # ETF, ETN, 스팩 제외
+
             if any(keyword in name for keyword in ["ETF", "ETN", "스팩", "스펙"]):
                 continue
-            
-            # API JSON에서 바로 10% 상승, 300% 거래량 증가 체크
+
             vol_rate = float(item.get("vol_inrt", 0))
             price_rate = float(item.get("prdy_ctrt", 0))
-                
+
             if price >= 1000 and vol_rate >= 300.0 and price_rate >= 10.0:
                 candidates.append({"code": code, "name": name, "price": price, "amt": amt})
-                
-        # 조건 1: 추출된 종목 중 거래대금 순으로 정렬하여 상위 30위 추출
+
         candidates.sort(key=lambda x: x["amt"], reverse=True)
         top_30 = candidates[:30]
-        
+
         s_class_list = []
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        
+
         for rank, cand in enumerate(top_30, start=1):
             code = cand["code"]
             name = cand["name"]
             daily_info = self.get_daily_prices(code, count=260)
             if len(daily_info) < 250: continue
-            
+
             df = pd.DataFrame(daily_info)[::-1].reset_index(drop=True)
             df[['clpr', 'hgpr', 'amt', 'vol']] = df[['stck_clpr', 'stck_hgpr', 'acml_tr_pbmn', 'acml_vol']].apply(pd.to_numeric)
-            
+
             if self.is_s_class_target(df):
                 curr = df.iloc[-1]
                 prev = df.iloc[-2]
                 change_rate = (curr['clpr'] - prev['clpr']) / prev['clpr'] * 100
                 amt_100m = int(curr['amt'] / 100_000_000)
-                
+
                 if self.gs_manager:
-                    is_logged = self.gs_manager.log_lead_stock(today_str, code, name, curr['clpr'], round(change_rate, 2), amt_100m, rank, "S-Class 주도주 포착")
+                    is_logged = self.gs_manager.log_lead_stock(
+                        log_date_str, code, name, curr['clpr'],
+                        round(change_rate, 2), amt_100m, rank, "S-Class 주도주 포착"
+                    )
                     if is_logged:
-                        write_log(f"[S-Class 확정] {name}({code}) - 모든 S급 주도주 조건 통과. 시트 기록 완료.")
+                        write_log(f"[S-Class 확정] {name}({code}) - 시트 기록 완료.")
                 s_class_list.append(cand)
-                
+
             time.sleep(0.2)
-            
-        write_log(f"S-Class 스캐닝 완료: 총 {len(s_class_list)} 종목 발굴")
+
+        write_log(f"S-Class 스캐닝 완료 ({log_date_str}): 총 {len(s_class_list)} 종목 발굴")
         return s_class_list
 
 
