@@ -285,6 +285,16 @@ function today() {
 function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+// 거래대금 포맷: 억 단위 숫자 → "1조 794억" / "794억"
+function formatAmount(val) {
+    const n = Math.floor(Number(val) || 0);
+    if (n <= 0) return '';
+    const jo  = Math.floor(n / 10000);
+    const eok = n % 10000;
+    if (jo > 0 && eok > 0) return jo + '조 ' + eok + '억';
+    if (jo > 0)             return jo + '조';
+    return eok + '억';
+}
 
 // ── 메인 업데이트 ─────────────────────────────────────────────────────
 async function updateDashboard() {
@@ -341,14 +351,15 @@ function renderLeadStocks(rows, C) {
     document.getElementById('lead-badge').textContent  =
         latestDate ? latestDate + ' · ' + latestRows.length + '건' : '최신 10건';
 
-    const display = rows.slice(-10).reverse();
+    // 최신 날짜 종목만, 거래대금 내림차순
+    const display = [...latestRows].sort((a, b) => (Number(b[C.amt]) || 0) - (Number(a[C.amt]) || 0));
 
     document.getElementById('lead-stock-table').innerHTML = display.map(r => {
         const rate  = parseFloat(r[C.rate])  || 0;
         const price = parseFloat(r[C.price]) || 0;
         const cls   = rate >= 0 ? 'up' : 'down';
         const sign  = rate >= 0 ? '+' : '';
-        const amt   = r[C.amt] ? Math.floor(Number(r[C.amt])) + '억' : '';
+        const amt   = formatAmount(r[C.amt]);
         const code  = esc(r[C.code]);
         const name  = esc(r[C.name]);
         return `<tr onclick="openChartModal('${code}','${name}',${price},${rate})">
