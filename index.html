@@ -35,7 +35,7 @@
             border-bottom: 1px solid var(--border);
         }
         .logo-area { display: flex; flex-direction: column; align-items: flex-start; }
-        .logo-img  { height: 45px; width: auto; display: block; margin-bottom: 5px; }
+        .logo-img  { height: 45px; width: auto; max-width: 180px; display: block; margin-bottom: 5px; object-fit: contain; }
         #live-status { font-size: 12px; font-weight: bold; color: var(--green); }
         #live-status.error { color: var(--red); }
 
@@ -341,7 +341,7 @@ function renderLeadStocks(rows, C) {
         return `<tr onclick="openChartModal('${code}','${name}',${price},${rate})">
             <td>
                 <div>${name}</div>
-                <div class="sub">${code}</div>
+                <div class="sub">${code} · ${esc(r[C.date])}</div>
             </td>
             <td style="text-align:right; white-space:nowrap;">
                 <span class="${cls}">${sign}${rate.toFixed(2)}%</span>${amt
