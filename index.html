@@ -88,6 +88,19 @@
         #lead-stock-table tr { cursor: pointer; transition: background 0.15s; }
         #lead-stock-table tr:hover td { background: #1a1d20; }
 
+        /* ── 전략 섹션 ── */
+        .strat-section { margin-bottom: 18px; }
+        .strat-head {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 8px; padding: 6px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 12px; font-weight: bold;
+        }
+        .strat-name { color: var(--fg); }
+        .badge-live    { background: #0d2e1f; color: var(--green); }
+        .badge-planned { background: #1e1a0d; color: var(--gold); }
+        .strat-empty { color: var(--sub); font-size: 11px; padding: 8px 0 4px 2px; }
+
         /* ── Footer ── */
         footer {
             margin-top: 40px; padding-top: 20px;
@@ -182,11 +195,11 @@
         <div class="content-card">
             <div class="card-header">
                 <span>눌림목 매매 후보</span>
-                <span class="badge active" id="cand-badge">NH-Sniper 조건</span>
+                <span class="badge active" id="cand-badge">-</span>
             </div>
-            <table id="candidate-table">
-                <tr class="msg-row"><td colspan="2">데이터 로딩 중...</td></tr>
-            </table>
+            <div id="candidate-sections">
+                <div class="strat-empty" style="text-align:center;padding:40px 0;">데이터 로딩 중...</div>
+            </div>
         </div>
     </div>
 
@@ -353,52 +366,76 @@ function renderLeadStocks(rows, C) {
     }).join('');
 }
 
-// ── 오른쪽: 눌림목 매매 후보 (등락률 ≤ 3%) ───────────────────────────
+// ── 오른쪽: 눌림목 매매 후보 (3개 전략 섹션) ────────────────────────
 function renderCandidates(rows, C) {
+    const el = document.getElementById('candidate-sections');
+
     if (!rows.length) {
-        document.getElementById('candidate-table').innerHTML =
-            '<tr class="msg-row"><td colspan="2">오늘의 매매 후보가 없습니다.</td></tr>';
+        el.innerHTML = '<div class="strat-empty" style="text-align:center;padding:40px 0;">데이터 없음</div>';
+        document.getElementById('cand-badge').textContent = '-';
         return;
     }
+
     const allDates   = rows.map(r => r[C.date]).filter(Boolean);
     const latestDate = allDates.reduce((a,b) => a > b ? a : b, '');
-    let pool = rows.filter(r => r[C.date] === latestDate);
-    if (!pool.length) pool = rows.slice(-10);
 
-    const candidates = pool.filter(r => {
+    // NH-Sniper 후보: 최신 날짜 + 등락률 ≤ 3% + 거래량비 ≤ 50%
+    const latestPool = rows.filter(r => r[C.date] === latestDate);
+    const nhCands = latestPool.filter(r => {
         const rate = parseFloat(r[C.rate]) || 0;
         if (rate > 3.0) return false;
-        if (C.volRatio !== null && (parseFloat(r[C.volRatio])||999) > 50.0) return false;
+        if (C.volRatio !== null && (parseFloat(r[C.volRatio]) || 999) > 50.0) return false;
         if (C.status !== null) {
-            const st = String(r[C.status]||'').trim().toUpperCase();
+            const st = String(r[C.status] || '').trim().toUpperCase();
             if (st && st !== 'PENDING') return false;
         }
         return true;
     });
 
-    document.getElementById('cand-badge').textContent = candidates.length + '건';
+    document.getElementById('cand-badge').textContent = nhCands.length + '건';
 
-    if (!candidates.length) {
-        document.getElementById('candidate-table').innerHTML =
-            '<tr class="msg-row"><td colspan="2">오늘의 매매 후보가 없습니다.</td></tr>';
-        return;
-    }
-
-    document.getElementById('candidate-table').innerHTML = candidates.map(r => {
+    function makeCandRow(r) {
         const rate = parseFloat(r[C.rate]) || 0;
         const cls  = rate >= 0 ? 'up' : 'down';
         const sign = rate >= 0 ? '+' : '';
+        const price = parseFloat(r[C.price]) || 0;
         let instStar = '';
         if (C.inst !== null && parseFloat(r[C.inst]) > 0) instStar = '<span class="star">★</span>';
         else if (C.remark !== null && String(r[C.remark]||'').includes('기관')) instStar = '<span class="star">★</span>';
-        return `<tr>
+        return `<tr onclick="openChartModal('${esc(r[C.code])}','${esc(r[C.name])}',${price},${rate})" style="cursor:pointer;">
             <td>
                 <div>${esc(r[C.name])}${instStar}</div>
                 <div class="sub">${esc(r[C.code])} · <span class="${cls}">${sign}${rate.toFixed(2)}%</span></div>
             </td>
             <td><span class="tag-watch">관심</span></td>
         </tr>`;
-    }).join('');
+    }
+
+    function makeSection(title, badgeText, badgeCls, bodyHtml) {
+        return `<div class="strat-section">
+            <div class="strat-head">
+                <span class="strat-name">${title}</span>
+                <span class="badge ${badgeCls}">${badgeText}</span>
+            </div>
+            ${bodyHtml}
+        </div>`;
+    }
+
+    // ── 1D-Rebound (예정) ──
+    const rb1Body = `<div class="strat-empty">전략 준비 중 — 상세 조건 기술 예정</div>`;
+
+    // ── NH-Sniper (구현 중) ──
+    const nhBody = nhCands.length
+        ? `<table>${nhCands.map(makeCandRow).join('')}</table>`
+        : `<div class="strat-empty">오늘의 NH-Sniper 후보 없음</div>`;
+
+    // ── 20D-Swing (예정) ──
+    const swing20Body = `<div class="strat-empty">전략 준비 중 — 20일선 눌림 스윙 조건 기술 예정</div>`;
+
+    el.innerHTML =
+        makeSection('1D-Rebound',  '예정',    'badge-planned', rb1Body)    +
+        makeSection('NH-Sniper',   '구현 중', 'badge-live',    nhBody)     +
+        makeSection('20D-Swing',   '예정',    'badge-planned', swing20Body);
 }
 
 // ── 요약 카드: 보유 수 + 이달 수익률 ─────────────────────────────────
