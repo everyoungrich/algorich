@@ -126,36 +126,91 @@
         /* ── Chart Modal ── */
         #chart-overlay {
             display: none; position: fixed; inset: 0;
-            background: rgba(0,0,0,0.82);
+            background: rgba(0,0,0,0.85);
             z-index: 1000;
             align-items: center; justify-content: center;
+            padding: 16px;
         }
         #chart-box {
             background: #111315; border-radius: 16px;
-            border: 1px solid var(--border); padding: 24px;
-            width: 740px; max-width: 96vw;
+            border: 1px solid var(--border);
+            width: 900px; max-width: 98vw;
+            max-height: 92vh; overflow-y: auto;
+            display: flex; flex-direction: column;
         }
-        #chart-header {
+        /* 헤더 */
+        #modal-header { padding: 20px 24px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        .modal-title-row {
             display: flex; justify-content: space-between; align-items: flex-start;
-            margin-bottom: 16px;
+            margin-bottom: 10px;
         }
-        #chart-title { font-size: 18px; font-weight: bold; }
-        #chart-sub   { font-size: 13px; color: var(--sub); margin-top: 5px; display: flex; align-items: center; gap: 8px; }
+        .modal-name { font-size: 20px; font-weight: 700; }
+        .modal-code-row { display: flex; align-items: center; gap: 8px; margin-top: 5px; flex-wrap: wrap; }
+        .modal-code { font-size: 13px; color: var(--sub); }
+        .modal-market { font-size: 10px; padding: 2px 7px; border-radius: 5px; font-weight: 700; }
         #chart-close {
             background: none; border: none; color: var(--sub);
-            font-size: 28px; cursor: pointer; line-height: 1; padding: 0;
+            font-size: 28px; cursor: pointer; line-height: 1; padding: 0; flex-shrink: 0;
         }
         #chart-close:hover { color: var(--fg); }
-        #chart-wrap { width: 100%; height: 400px; position: relative; }
+        .modal-price-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+        .modal-price  { font-size: 30px; font-weight: 700; }
+        .modal-change { font-size: 15px; }
+        /* 52주 range bar */
+        .range-wrap { display: flex; align-items: center; gap: 10px; }
+        .range-label { font-size: 11px; color: var(--sub); white-space: nowrap; }
+        .range-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--border); position: relative; min-width: 60px; }
+        .range-thumb {
+            position: absolute; top: -3px;
+            width: 10px; height: 10px; border-radius: 50%;
+            background: var(--green); transform: translateX(-50%); transition: left 0.3s;
+        }
+        /* 차트 */
+        #modal-chart-section { padding: 0 24px; flex-shrink: 0; }
+        #chart-tabs { display: flex; gap: 4px; padding: 12px 0 8px; }
+        .chart-tab {
+            background: none; border: 1px solid var(--border);
+            color: var(--sub); font-size: 12px; padding: 4px 14px;
+            border-radius: 6px; cursor: pointer; transition: all 0.15s;
+        }
+        .chart-tab:hover  { border-color: var(--green); color: var(--green); }
+        .chart-tab.active { background: var(--green); border-color: var(--green); color: #000; font-weight: 700; }
+        #chart-wrap { width: 100%; height: 300px; position: relative; }
         #chart-msg  {
             position: absolute; inset: 0;
             display: flex; align-items: center; justify-content: center;
             color: var(--sub); font-size: 13px;
         }
+        /* 하단: 기본정보 + 수급 */
+        #modal-bottom {
+            display: grid; grid-template-columns: 1fr 1fr;
+            padding: 16px 24px 20px; border-top: 1px solid var(--border);
+        }
+        .modal-section-title {
+            font-size: 10px; font-weight: 700; color: var(--sub);
+            letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 10px;
+        }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; }
+        .info-item { display: flex; flex-direction: column; gap: 2px; }
+        .info-label { font-size: 10px; color: var(--sub); }
+        .info-val   { font-size: 13px; font-weight: 600; }
+        #modal-supply { padding-left: 20px; border-left: 1px solid var(--border); }
+        .supply-row {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            padding: 7px 0; border-bottom: 1px solid var(--row);
+        }
+        .supply-row:last-child { border-bottom: none; }
+        .supply-label  { font-size: 12px; color: var(--sub); width: 50px; flex-shrink: 0; padding-top: 2px; }
+        .supply-val    { font-size: 13px; font-weight: 700; }
+        .supply-detail { font-size: 10px; color: var(--sub); margin-top: 3px; }
         .badge-52h {
             font-size: 11px; padding: 2px 8px; border-radius: 8px;
             background: rgba(255,77,77,0.15); color: var(--red);
             border: 1px solid rgba(255,77,77,0.3); font-weight: bold;
+        }
+        @media (max-width: 700px) {
+            #modal-bottom { grid-template-columns: 1fr; }
+            #modal-supply { padding-left: 0; border-left: none; padding-top: 16px; border-top: 1px solid var(--border); }
         }
 
         @media (max-width: 640px) {
@@ -227,19 +282,58 @@
     </footer>
 </div>
 
-<!-- ── 캔들차트 모달 ── -->
+<!-- ── 종목 상세 모달 ── -->
 <div id="chart-overlay">
     <div id="chart-box">
-        <div id="chart-header">
-            <div>
-                <div id="chart-title"></div>
-                <div id="chart-sub"></div>
+
+        <!-- 헤더 -->
+        <div id="modal-header">
+            <div class="modal-title-row">
+                <div>
+                    <span id="modal-name" class="modal-name">-</span>
+                    <div class="modal-code-row">
+                        <span id="modal-code" class="modal-code">-</span>
+                        <span id="modal-market" class="modal-market">-</span>
+                        <span id="badge-52h-hdr"></span>
+                    </div>
+                </div>
+                <button id="chart-close" onclick="closeChart()">×</button>
             </div>
-            <button id="chart-close" onclick="closeChart()">×</button>
+            <div class="modal-price-row">
+                <span id="modal-price" class="modal-price">-</span>
+                <span id="modal-change" class="modal-change">-</span>
+            </div>
+            <div class="range-wrap">
+                <span id="range-low"  class="range-label">52주 최저</span>
+                <div class="range-bar"><div id="range-thumb" class="range-thumb" style="left:50%"></div></div>
+                <span id="range-high" class="range-label">52주 최고</span>
+            </div>
         </div>
-        <div id="chart-wrap">
-            <div id="chart-msg">차트 데이터 로딩 중...</div>
+
+        <!-- 차트 -->
+        <div id="modal-chart-section">
+            <div id="chart-tabs">
+                <button class="chart-tab active" data-div="D" onclick="switchChartTab('D')">일봉</button>
+                <button class="chart-tab"        data-div="W" onclick="switchChartTab('W')">주봉</button>
+                <button class="chart-tab"        data-div="M" onclick="switchChartTab('M')">월봉</button>
+            </div>
+            <div id="chart-wrap">
+                <div id="chart-msg">차트 데이터 로딩 중...</div>
+            </div>
         </div>
+
+        <!-- 기본정보 + 수급 -->
+        <div id="modal-bottom">
+            <div id="modal-info">
+                <div class="modal-section-title">기본 정보</div>
+                <div id="modal-info-grid" class="info-grid"></div>
+            </div>
+            <div id="modal-supply">
+                <div class="modal-section-title">투자자별 순매수</div>
+                <div id="modal-supply-rows"></div>
+            </div>
+        </div>
+
     </div>
 </div>
 
@@ -253,7 +347,8 @@ const TRADE_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSqu0fljA
 
 // ── 전역 상태 ────────────────────────────────────────────────────────
 let _chart       = null;
-let _holdingsMap = {};   // { code: { buyPrice } } — 보유 종목 가격선용
+let _holdingsMap = {};
+let _modalState  = { code: '', name: '', price: 0, rate: 0, periodDiv: 'D' };
 
 // ── CSV 파서 ─────────────────────────────────────────────────────────
 function parseCsv(text) {
@@ -493,127 +588,229 @@ function renderSummaryTrades(rows) {
 }
 
 // ════════════════════════════════════════════════════════════
-// 차트 모달
+// 종목 상세 모달
 // ════════════════════════════════════════════════════════════
+
 function openChartModal(code, name, price, rate) {
-    const overlay = document.getElementById('chart-overlay');
-    overlay.style.display = 'flex';
+    _modalState = { code, name, price, rate, periodDiv: 'D' };
+    document.getElementById('chart-overlay').style.display = 'flex';
 
-    // 헤더 초기화
-    const rateStr = (rate>=0?'+':'') + Number(rate).toFixed(2) + '%';
-    const cls     = rate >= 0 ? 'up' : 'down';
-    document.getElementById('chart-title').innerHTML =
-        `${name} <span style="color:var(--sub);font-size:14px;font-weight:normal;">${code}</span>`;
-    document.getElementById('chart-sub').innerHTML =
-        `<span>${Number(price).toLocaleString()}원</span>` +
-        `<span class="${cls}">${rateStr}</span>`;
+    // CSV 데이터로 헤더 즉시 채우기
+    document.getElementById('modal-name').textContent   = name;
+    document.getElementById('modal-code').textContent   = code;
+    document.getElementById('modal-market').textContent = '-';
+    document.getElementById('badge-52h-hdr').innerHTML  = '';
 
-    // 기존 차트 제거
-    if (_chart) { _chart.remove(); _chart = null; }
-    const wrap = document.getElementById('chart-wrap');
-    Array.from(wrap.children).forEach(el => { if (el.id !== 'chart-msg') el.remove(); });
+    const pEl = document.getElementById('modal-price');
+    const cEl = document.getElementById('modal-change');
+    pEl.textContent = price > 0 ? Number(price).toLocaleString() + '원' : '-';
+    const sign = rate >= 0 ? '+' : '', cls = rate >= 0 ? 'up' : 'down';
+    cEl.innerHTML = `<span class="${cls}">${sign}${Number(rate).toFixed(2)}%</span>`;
 
+    document.getElementById('range-low').textContent  = '52주 최저';
+    document.getElementById('range-high').textContent = '52주 최고';
+    document.getElementById('range-thumb').style.left = '50%';
+    document.getElementById('modal-info-grid').innerHTML   = '<div style="color:var(--sub);font-size:11px;grid-column:span 2">로딩 중...</div>';
+    document.getElementById('modal-supply-rows').innerHTML = '<div style="color:var(--sub);font-size:11px">로딩 중...</div>';
+
+    document.querySelectorAll('.chart-tab').forEach(t => t.classList.toggle('active', t.dataset.div === 'D'));
+    _destroyChart();
     const msgEl = document.getElementById('chart-msg');
     msgEl.style.display = 'flex';
     msgEl.textContent   = '차트 데이터 로딩 중...';
 
-    if (!CHART_API_URL) {
-        msgEl.textContent = 'Apps Script URL 미설정 — index.html의 CHART_API_URL에 배포 URL을 입력해주세요.';
-        return;
-    }
+    // 차트 + 종목정보 병렬 로드
+    Promise.all([
+        fetch(CHART_API_URL + '?type=chart&code='     + encodeURIComponent(code) + '&period=250&period_div=D').then(r => r.json()),
+        fetch(CHART_API_URL + '?type=stockinfo&code=' + encodeURIComponent(code)).then(r => r.json()),
+    ]).then(([chartData, infoData]) => {
+        if (chartData.status === 'ok' && (chartData.chart || []).length) renderChart(chartData.chart);
+        else msgEl.textContent = '차트 데이터 없음' + (chartData.error ? ': ' + chartData.error : '');
 
-    fetch(CHART_API_URL + '?type=chart&code=' + encodeURIComponent(code) + '&period=250')
-        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        if (infoData.status === 'ok' && infoData.stockInfo) {
+            renderStockHeader(infoData.stockInfo);
+            renderInfoGrid(infoData.stockInfo);
+            renderSupply(infoData.stockInfo);
+        }
+    }).catch(e => { msgEl.textContent = '로딩 실패: ' + e.message; });
+}
+
+// ── 탭 전환 (일봉/주봉/월봉) ─────────────────────────────────────────
+function switchChartTab(periodDiv) {
+    if (_modalState.periodDiv === periodDiv) return;
+    _modalState.periodDiv = periodDiv;
+    document.querySelectorAll('.chart-tab').forEach(t => t.classList.toggle('active', t.dataset.div === periodDiv));
+    _destroyChart();
+    const msgEl = document.getElementById('chart-msg');
+    msgEl.style.display = 'flex';
+    msgEl.textContent   = '차트 데이터 로딩 중...';
+    const periods = { D: 250, W: 104, M: 60 };
+    fetch(CHART_API_URL + '?type=chart&code=' + encodeURIComponent(_modalState.code)
+        + '&period=' + (periods[periodDiv] || 250) + '&period_div=' + periodDiv)
+        .then(r => r.json())
         .then(data => {
-            if (data.status !== 'ok') throw new Error(data.error || '서버 오류');
-            const candles = data.chart || [];
-            if (!candles.length) throw new Error('차트 데이터 없음');
-            renderChart(wrap, msgEl, code, candles, price, rate);
+            if (data.status === 'ok' && (data.chart || []).length) renderChart(data.chart);
+            else msgEl.textContent = '차트 데이터 없음';
         })
         .catch(e => { msgEl.textContent = '로딩 실패: ' + e.message; });
 }
 
-function renderChart(wrap, msgEl, code, candles, currentPrice, rate) {
+// ── 헤더 (stockInfo 기반) ────────────────────────────────────────────
+function renderStockHeader(info) {
+    const price = info.price || _modalState.price;
+    const rate  = info.changeRate  || _modalState.rate;
+    const chg   = info.priceChange || 0;
+    const cls   = rate >= 0 ? 'up' : 'down';
+    const sign  = rate >= 0 ? '+' : '';
+
+    document.getElementById('modal-price').textContent = price > 0 ? Number(price).toLocaleString() + '원' : '-';
+    document.getElementById('modal-change').innerHTML =
+        `<span class="${cls}">${sign}${Number(rate).toFixed(2)}%</span>` +
+        (chg !== 0 ? `<span style="color:var(--sub);font-size:13px;margin-left:8px;">${chg > 0 ? '+' : ''}${Number(chg).toLocaleString()}원</span>` : '');
+
+    const mkt   = info.market || '';
+    const mktEl = document.getElementById('modal-market');
+    mktEl.textContent = mkt || '-';
+    mktEl.style.background = mkt.includes('코스닥') ? '#1a1235' : '#1a2535';
+    mktEl.style.color      = mkt.includes('코스닥') ? '#a78bfa' : '#3b82f6';
+
+    document.getElementById('badge-52h-hdr').innerHTML =
+        (info.high52w > 0 && price >= info.high52w) ? '<span class="badge-52h">52주 신고가</span>' : '';
+
+    if (info.high52w > 0 && info.low52w > 0 && price > 0) {
+        const pct = Math.min(100, Math.max(0,
+            (price - info.low52w) / (info.high52w - info.low52w) * 100));
+        document.getElementById('range-low').textContent  = Number(info.low52w).toLocaleString();
+        document.getElementById('range-high').textContent = Number(info.high52w).toLocaleString();
+        document.getElementById('range-thumb').style.left = pct.toFixed(1) + '%';
+    }
+}
+
+// ── 기본정보 그리드 ───────────────────────────────────────────────────
+function renderInfoGrid(info) {
+    const tv  = Number(info.tradingValue || 0);
+    const tvB = tv > 0 ? Math.floor(tv / 1e8) : 0;  // 원 → 억
+    const mc  = Number(info.marketCapB  || 0);       // 이미 억원
+    let mcStr = '-';
+    if (mc > 0) {
+        const jo = Math.floor(mc / 10000), eok = mc % 10000;
+        mcStr = jo > 0 ? jo + '조' + (eok > 0 ? ' ' + eok + '억' : '') : mc + '억';
+    }
+    const items = [
+        { label: '전일종가',  val: Number(info.prevClose || 0).toLocaleString() + '원' },
+        { label: '시가',      val: Number(info.open  || 0).toLocaleString() + '원' },
+        { label: '고가',      val: Number(info.high  || 0).toLocaleString() + '원', cls: 'up' },
+        { label: '저가',      val: Number(info.low   || 0).toLocaleString() + '원', cls: 'down' },
+        { label: '거래량',    val: info.volume > 0 ? Number(info.volume).toLocaleString() + '주' : '-' },
+        { label: '거래대금',  val: tvB > 0 ? formatAmount(tvB) : '-' },
+        { label: '시가총액',  val: mcStr },
+        { label: 'PER / PBR', val: (info.per > 0 ? Number(info.per).toFixed(1) : '-') + ' / ' + (info.pbr > 0 ? Number(info.pbr).toFixed(2) : '-') },
+    ];
+    document.getElementById('modal-info-grid').innerHTML = items.map(it =>
+        `<div class="info-item">
+            <span class="info-label">${it.label}</span>
+            <span class="info-val${it.cls ? ' ' + it.cls : ''}">${it.val}</span>
+        </div>`).join('');
+}
+
+// ── 수급 렌더 ─────────────────────────────────────────────────────────
+function renderSupply(info) {
+    function fmtQ(n) {
+        if (!n) return '<span style="color:var(--sub)">-</span>';
+        const s = n > 0 ? 'up' : 'down';
+        return `<span class="supply-val ${s}">${n > 0 ? '+' : ''}${Number(n).toLocaleString()}주</span>`;
+    }
+    const parts = [
+        info.fnncNet ? '금투 ' + (info.fnncNet > 0 ? '+' : '') + Number(info.fnncNet).toLocaleString() : '',
+        info.ivtrNet ? '투신 ' + (info.ivtrNet > 0 ? '+' : '') + Number(info.ivtrNet).toLocaleString() : '',
+        info.prvtNet ? '사모 ' + (info.prvtNet > 0 ? '+' : '') + Number(info.prvtNet).toLocaleString() : '',
+    ].filter(Boolean);
+    const rows = [
+        { label: '기관',   net: info.instNet, detail: parts.join(' / ') },
+        { label: '외국인', net: info.frnNet,  detail: '' },
+        { label: '개인',   net: info.indvNet, detail: '' },
+    ];
+    document.getElementById('modal-supply-rows').innerHTML = rows.map(r =>
+        `<div class="supply-row">
+            <span class="supply-label">${r.label}</span>
+            <div style="flex:1;text-align:right;">
+                ${fmtQ(r.net)}
+                ${r.detail ? `<div class="supply-detail">${r.detail}</div>` : ''}
+            </div>
+        </div>`).join('');
+}
+
+// ── 차트 렌더 ─────────────────────────────────────────────────────────
+function renderChart(candles) {
+    const wrap  = document.getElementById('chart-wrap');
+    const msgEl = document.getElementById('chart-msg');
     msgEl.style.display = 'none';
 
     const div = document.createElement('div');
-    div.style.width  = '100%';
-    div.style.height = '100%';
+    div.style.cssText = 'width:100%;height:100%;';
     wrap.appendChild(div);
 
     _chart = LightweightCharts.createChart(div, {
-        width:  div.clientWidth || 692,
-        height: 400,
+        width:  div.clientWidth || 852,
+        height: 300,
         layout: { background: { color: '#111315' }, textColor: '#8b8e92' },
         grid:   { vertLines: { color: '#1e2124' }, horzLines: { color: '#1e2124' } },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-        rightPriceScale: { borderColor: '#2a2d31' },
-        timeScale:       { borderColor: '#2a2d31', timeVisible: true },
+        rightPriceScale: { borderColor: '#2a2d31', scaleMargins: { top: 0.08, bottom: 0.25 } },
+        timeScale: { borderColor: '#2a2d31', timeVisible: true },
     });
 
-    // 날짜 변환: YYYYMMDD → YYYY-MM-DD
     const fmt = d => `${d.date.slice(0,4)}-${d.date.slice(4,6)}-${d.date.slice(6,8)}`;
 
-    // ── 캔들스틱 ──
+    // 캔들스틱
     const cs = _chart.addCandlestickSeries({
         upColor: '#00ffa3', downColor: '#ff4d4d',
         borderVisible: false, wickUpColor: '#00ffa3', wickDownColor: '#ff4d4d',
     });
     cs.setData(candles.map(d => ({ time: fmt(d), open: d.open, high: d.high, low: d.low, close: d.close })));
 
-    // ── 이동평균선 ──
-    const addMA = (period, color) => {
+    // 거래량 오버레이 (하단 25%)
+    const volS = _chart.addHistogramSeries({
+        priceFormat: { type: 'volume' }, priceScaleId: '',
+        lastValueVisible: false, priceLineVisible: false,
+    });
+    volS.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    volS.setData(candles.map(d => ({
+        time: fmt(d), value: d.volume,
+        color: d.close >= d.open ? 'rgba(0,255,163,0.35)' : 'rgba(255,77,77,0.35)',
+    })));
+
+    // 이동평균선 MA5/20/60
+    const addMA = (p, color) => {
         const s = _chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-        const vals = calcMA(candles, period);
-        s.setData(vals.map((v, i) => ({ time: fmt(candles[i]), value: v })).filter(d => d.value !== null));
+        s.setData(calcMA(candles, p).map((v, i) => ({ time: fmt(candles[i]), value: v })).filter(d => d.value !== null));
     };
-    addMA(5,  'rgba(255,255,255,0.65)');  // MA5  흰색
-    addMA(20, '#f0a500');                  // MA20 노란색
-    addMA(60, '#f97316');                  // MA60 주황색
+    addMA(5,  'rgba(255,255,255,0.70)');
+    addMA(20, '#f0a500');
+    addMA(60, '#f97316');
 
-    // ── 52주 고/저 ──
-    const highs = candles.map(d => d.high);
-    const lows  = candles.map(d => d.low);
-    const high52 = Math.max(...highs);
-    const low52  = Math.min(...lows);
-
-    cs.createPriceLine({ price: high52, color: '#ff4d4d', lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: '52주 고가' });
-    cs.createPriceLine({ price: low52, color: '#3b82f6', lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: '52주 저가' });
-
-    // ── 52주 신고가 여부 뱃지 ──
-    const lastHigh   = candles[candles.length - 1].high;
-    const prevHigh52 = Math.max(...highs.slice(0, -1));
-    const isNewHigh  = lastHigh >= prevHigh52;
-    const subEl      = document.getElementById('chart-sub');
-    // 뱃지 중복 제거 후 추가
-    const existBadge = subEl.querySelector('.badge-52h');
-    if (existBadge) existBadge.remove();
-    if (isNewHigh) {
-        const badge = document.createElement('span');
-        badge.className   = 'badge-52h';
-        badge.textContent = '52주 신고가';
-        subEl.appendChild(badge);
+    // 52주 신고가 기준선
+    const highs = candles.map(d => d.high).filter(v => v > 0);
+    if (highs.length > 1) {
+        cs.createPriceLine({
+            price: Math.max(...highs.slice(0, -1)), color: 'rgba(255,77,77,0.8)', lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: '52주 고가',
+        });
     }
 
-    // ── 보유 종목 가격선 ──
-    const holding = _holdingsMap[code];
+    // 보유 종목 가격선
+    const holding = _holdingsMap[_modalState.code];
     if (holding && holding.buyPrice > 0) {
         const bp = holding.buyPrice;
-        cs.createPriceLine({ price: bp,         color: '#00ffa3', lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: '매수가' });
-        cs.createPriceLine({ price: bp * 1.20,  color: '#00ffa3', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: '목표 +20%' });
-        cs.createPriceLine({ price: bp * 0.97,  color: '#ff4d4d', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: '손절 -3%' });
+        cs.createPriceLine({ price: bp,        color: '#00ffa3', lineWidth: 1, lineStyle: 0,                                        axisLabelVisible: true, title: '매수가' });
+        cs.createPriceLine({ price: bp * 1.20, color: '#00ffa3', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: '+20%' });
+        cs.createPriceLine({ price: bp * 0.97, color: '#ff4d4d', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: '-3%' });
     }
 
     _chart.timeScale().fitContent();
-
-    // 창 리사이즈 대응
-    const onResize = () => {
-        if (_chart) _chart.applyOptions({ width: div.clientWidth });
-    };
+    const onResize = () => { if (_chart) _chart.applyOptions({ width: div.clientWidth }); };
     window.addEventListener('resize', onResize);
-    div._onResize = onResize; // cleanup용
+    div._onResize = onResize;
 }
 
 // ── MA 계산 ──────────────────────────────────────────────────────────
@@ -625,16 +822,21 @@ function calcMA(candles, period) {
     });
 }
 
-// ── 차트 닫기 ─────────────────────────────────────────────────────────
-function closeChart() {
-    document.getElementById('chart-overlay').style.display = 'none';
+// ── 차트 인스턴스 정리 ────────────────────────────────────────────────
+function _destroyChart() {
     if (_chart) {
-        // resize 리스너 제거
         const div = document.querySelector('#chart-wrap > div:not(#chart-msg)');
         if (div && div._onResize) window.removeEventListener('resize', div._onResize);
-        _chart.remove();
-        _chart = null;
+        _chart.remove(); _chart = null;
     }
+    Array.from(document.getElementById('chart-wrap').children)
+        .forEach(el => { if (el.id !== 'chart-msg') el.remove(); });
+}
+
+// ── 모달 닫기 ─────────────────────────────────────────────────────────
+function closeChart() {
+    document.getElementById('chart-overlay').style.display = 'none';
+    _destroyChart();
 }
 
 // ESC 키
