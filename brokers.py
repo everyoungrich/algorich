@@ -253,7 +253,9 @@ class KISBroker(BaseBroker):
         }
 
         res = safe_request('GET', url_amt, gs_manager=self.gs_manager, headers=headers, params=params, timeout=10)
-        raw_list = res.json().get("output", []) if res and res.status_code == 200 else []
+        # API는 거래대금순 정렬로 반환 — 즉시 상위 30개로 자름 (진짜 시장 거래대금 상위 30위)
+        raw_list = (res.json().get("output", []) if res and res.status_code == 200 else [])[:30]
+        write_log(f"[거래대금 상위 30위] API 수신: {len(raw_list)}종목")
 
         candidates = []
         for item in raw_list:
@@ -274,11 +276,11 @@ class KISBroker(BaseBroker):
                 candidates.append({"code": code, "name": name, "price": price, "amt": amt})
 
         candidates.sort(key=lambda x: x["amt"], reverse=True)
-        top_30 = candidates[:30]
+        write_log(f"[필터 통과] vol>=300%+등락>=10%+1000원↑: {len(candidates)}종목 → 52주 신고가 검증 시작")
 
         s_class_list = []
 
-        for rank, cand in enumerate(top_30, start=1):
+        for rank, cand in enumerate(candidates, start=1):
             code = cand["code"]
             name = cand["name"]
             daily_info = self.get_daily_prices(code, count=260)
