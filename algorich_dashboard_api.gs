@@ -362,3 +362,9 @@ function toNum(val) {
   var n = Number(val);
   return isNaN(n) ? 0 : n;
 }
+
+// KIS 토큰 캐시 수동 초기화 — KIS_MODE 변경 후 GAS 편집기에서 한 번 실행
+function clearKisToken() {
+  CacheService.getScriptCache().remove('KIS_TOKEN');
+  Logger.log('KIS 토큰 캐시 삭제 완료');
+}
