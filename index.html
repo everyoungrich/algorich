@@ -293,23 +293,22 @@
         const display = rows.slice(-10).reverse();
 
         document.getElementById('lead-stock-table').innerHTML = display.map(r => {
-            const rate = parseFloat(r[C.rate]) || 0;
-            const cls  = rate >= 0 ? 'up' : 'down';
-            const sign = rate >= 0 ? '+' : '';
+            const rate  = parseFloat(r[C.rate]) || 0;
+            const cls   = rate >= 0 ? 'up' : 'down';
+            const sign  = rate >= 0 ? '+' : '';
             const price = Number(r[C.price] || 0).toLocaleString();
-            const amt   = r[C.amt] ? Number(r[C.amt]).toLocaleString() + '억' : '-';
+            const amt   = r[C.amt] ? Math.floor(Number(r[C.amt])) + '억' : '';
             return `<tr>
                 <td>
                     <div>${esc(r[C.name])}</div>
-                    <div class="sub">${esc(r[C.code])} &middot; ${esc(r[C.date])}</div>
+                    <div class="sub">${esc(r[C.code])}</div>
                 </td>
-                <td class="${cls}" style="text-align:center; white-space:nowrap;">
-                    ${sign}${rate.toFixed(2)}%<br>
-                    <span class="sub" style="font-weight:normal">${amt}</span>
+                <td style="text-align:right; white-space:nowrap;">
+                    <span class="${cls}">${sign}${rate.toFixed(2)}%</span>${amt
+                        ? ` <span style="color:var(--text-sub);font-size:11px;margin-left:6px;">${amt}</span>`
+                        : ''}
                 </td>
-                <td>
-                    <div>${price}원</div>
-                </td>
+                <td>${price}원</td>
             </tr>`;
         }).join('');
     }
