@@ -85,8 +85,22 @@
             border-radius: 8px; background: #2e2000; color: var(--gold); font-weight: bold;
         }
         /* 관심종목 행 hover */
-        #lead-stock-table tr { cursor: pointer; transition: background 0.15s; }
-        #lead-stock-table tr:hover td { background: #1a1d20; }
+        #lead-stock-table table tr { cursor: pointer; transition: background 0.15s; }
+        #lead-stock-table table tr:hover td { background: #1a1d20; }
+
+        /* 날짜 그룹 헤더 */
+        .date-group { margin-top: 16px; }
+        .date-group:first-child { margin-top: 0; }
+        .date-group-hdr {
+            display: flex; align-items: center; gap: 7px;
+            padding-bottom: 7px; margin-bottom: 2px;
+            font-size: 11px; font-weight: 700;
+            color: var(--green); letter-spacing: 0.05em;
+            border-bottom: 1px solid var(--border);
+        }
+        .date-group-hdr .dg-line {
+            flex: 1; height: 1px; background: var(--border);
+        }
 
         /* ── 전략 섹션 ── */
         .strat-section { margin-bottom: 18px; }
@@ -188,9 +202,9 @@
                 <span>관심종목 (S-Class 스캔 결과)</span>
                 <span class="badge" id="lead-badge">최신 10건</span>
             </div>
-            <table id="lead-stock-table">
-                <tr class="msg-row"><td colspan="3">데이터 로딩 중...</td></tr>
-            </table>
+            <div id="lead-stock-table">
+                <div style="color:var(--sub);font-size:12px;text-align:center;padding:40px 0;">데이터 로딩 중...</div>
+            </div>
         </div>
         <div class="content-card">
             <div class="card-header">
@@ -335,45 +349,61 @@ function buildHoldingsMap(rows) {
     });
 }
 
-// ── 왼쪽: 관심종목 (최신 10건, 행 클릭 → 차트 모달) ─────────────────
+// ── 왼쪽: 관심종목 — 날짜별 그룹, 최신 날짜 최상단, 그룹 내 거래대금 내림차순
 function renderLeadStocks(rows, C) {
+    const el = document.getElementById('lead-stock-table');
     if (!rows.length || !rows[0][C.date]) {
         document.getElementById('scan-count').textContent = '0';
-        document.getElementById('lead-stock-table').innerHTML =
-            '<tr class="msg-row"><td colspan="3">기록된 데이터가 없습니다.</td></tr>';
+        el.innerHTML = '<div style="color:var(--sub);font-size:12px;text-align:center;padding:40px 0;">기록된 데이터가 없습니다.</div>';
         return;
     }
-    const allDates   = rows.map(r => r[C.date]).filter(Boolean);
-    const latestDate = allDates.reduce((a,b) => a > b ? a : b, '');
-    const latestRows = rows.filter(r => r[C.date] === latestDate);
 
-    document.getElementById('scan-count').textContent  = latestRows.length || '-';
-    document.getElementById('lead-badge').textContent  =
-        latestDate ? latestDate + ' · ' + latestRows.length + '건' : '최신 10건';
+    // 날짜별 그룹핑
+    const grouped = new Map();
+    rows.forEach(r => {
+        const d = r[C.date]; if (!d) return;
+        if (!grouped.has(d)) grouped.set(d, []);
+        grouped.get(d).push(r);
+    });
 
-    // 최신 날짜 종목만, 거래대금 내림차순
-    const display = [...latestRows].sort((a, b) => (Number(b[C.amt]) || 0) - (Number(a[C.amt]) || 0));
+    // 날짜 내림차순 (최신 → 과거)
+    const sortedDates = [...grouped.keys()].sort((a, b) => b.localeCompare(a));
 
-    document.getElementById('lead-stock-table').innerHTML = display.map(r => {
-        const rate  = parseFloat(r[C.rate])  || 0;
-        const price = parseFloat(r[C.price]) || 0;
-        const cls   = rate >= 0 ? 'up' : 'down';
-        const sign  = rate >= 0 ? '+' : '';
-        const amt   = formatAmount(r[C.amt]);
-        const code  = esc(r[C.code]);
-        const name  = esc(r[C.name]);
-        return `<tr onclick="openChartModal('${code}','${name}',${price},${rate})">
-            <td>
-                <div>${name}</div>
-                <div class="sub">${code} · ${esc(r[C.date])}</div>
-            </td>
-            <td style="text-align:right; white-space:nowrap;">
-                <span class="${cls}">${sign}${rate.toFixed(2)}%</span>${amt
-                    ? ` <span style="color:var(--sub);font-size:11px;margin-left:6px;">${amt}</span>`
-                    : ''}
-            </td>
-            <td>${Number(price).toLocaleString()}원</td>
-        </tr>`;
+    const latestDate  = sortedDates[0] || '';
+    const latestCount = latestDate ? grouped.get(latestDate).length : 0;
+    document.getElementById('scan-count').textContent = latestCount || '-';
+    document.getElementById('lead-badge').textContent = latestDate
+        ? latestDate + ' · ' + latestCount + '건' : '최신';
+
+    el.innerHTML = sortedDates.map(date => {
+        const group = [...grouped.get(date)].sort((a, b) => (Number(b[C.amt]) || 0) - (Number(a[C.amt]) || 0));
+
+        const rowsHtml = group.map(r => {
+            const rate  = parseFloat(r[C.rate])  || 0;
+            const price = parseFloat(r[C.price]) || 0;
+            const cls   = rate >= 0 ? 'up' : 'down';
+            const sign  = rate >= 0 ? '+' : '';
+            const amt   = formatAmount(r[C.amt]);
+            const code  = esc(r[C.code]);
+            const name  = esc(r[C.name]);
+            return `<tr onclick="openChartModal('${code}','${name}',${price},${rate})">
+                <td>
+                    <div>${name}</div>
+                    <div class="sub">${code}</div>
+                </td>
+                <td style="text-align:right; white-space:nowrap;">
+                    <span class="${cls}">${sign}${rate.toFixed(2)}%</span>${amt
+                        ? ` <span style="color:var(--sub);font-size:11px;margin-left:6px;">${amt}</span>`
+                        : ''}
+                </td>
+                <td>${Number(price).toLocaleString()}원</td>
+            </tr>`;
+        }).join('');
+
+        return `<div class="date-group">
+            <div class="date-group-hdr">📅 ${esc(date)}<span class="dg-line"></span></div>
+            <table>${rowsHtml}</table>
+        </div>`;
     }).join('');
 }
 
