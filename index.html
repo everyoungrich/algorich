@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AlgoRich Dashboard</title>
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root {
             --bg:      #0b0c0d;
@@ -619,20 +619,26 @@ function openChartModal(code, name, price, rate) {
     msgEl.style.display = 'flex';
     msgEl.textContent   = '차트 데이터 로딩 중...';
 
-    // 차트 + 종목정보 병렬 로드
-    Promise.all([
-        fetch(CHART_API_URL + '?type=chart&code='     + encodeURIComponent(code) + '&period=250&period_div=D').then(r => r.json()),
-        fetch(CHART_API_URL + '?type=stockinfo&code=' + encodeURIComponent(code)).then(r => r.json()),
-    ]).then(([chartData, infoData]) => {
-        if (chartData.status === 'ok' && (chartData.chart || []).length) renderChart(chartData.chart);
-        else msgEl.textContent = '차트 데이터 없음' + (chartData.error ? ': ' + chartData.error : '');
+    // 차트 요청 — 독립 실행 (수급 실패와 무관하게 렌더링)
+    fetch(CHART_API_URL + '?type=chart&code=' + encodeURIComponent(code) + '&period=250&period_div=D')
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'ok' && (data.chart || []).length) renderChart(data.chart);
+            else msgEl.textContent = '차트 데이터 없음' + (data.error ? ': ' + data.error : '');
+        })
+        .catch(e => { msgEl.textContent = '로딩 실패: ' + e.message; });
 
-        if (infoData.status === 'ok' && infoData.stockInfo) {
-            renderStockHeader(infoData.stockInfo);
-            renderInfoGrid(infoData.stockInfo);
-            renderSupply(infoData.stockInfo);
-        }
-    }).catch(e => { msgEl.textContent = '로딩 실패: ' + e.message; });
+    // 종목정보 요청 — 독립 실행 (차트 렌더링과 무관)
+    fetch(CHART_API_URL + '?type=stockinfo&code=' + encodeURIComponent(code))
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'ok' && data.stockInfo) {
+                renderStockHeader(data.stockInfo);
+                renderInfoGrid(data.stockInfo);
+                renderSupply(data.stockInfo);
+            }
+        })
+        .catch(() => {});  // 수급 실패는 silent — 차트에 영향 없음
 }
 
 // ── 탭 전환 (일봉/주봉/월봉) ─────────────────────────────────────────
