@@ -85,8 +85,10 @@
             border-radius: 8px; background: #2e2000; color: var(--gold); font-weight: bold;
         }
         /* 관심종목 행 hover */
-        #lead-stock-table table tr { cursor: pointer; transition: background 0.15s; }
-        #lead-stock-table table tr:hover td { background: #1a1d20; }
+        #lead-stock-table table tbody tr { cursor: pointer; transition: background 0.15s; }
+        #lead-stock-table table tbody tr:hover td { background: #1a1d20; }
+        #candidate-sections table tr { transition: background 0.15s; }
+        #candidate-sections table tr:hover td { background: #1a1d20; }
 
         /* 날짜 그룹 헤더 */
         .date-group { margin-top: 16px; }
@@ -224,8 +226,8 @@
 
     <header>
         <div class="logo-area">
-            <img src="./logo.png" alt="AlgoRich" class="logo-img"
-                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+            <img src="./logo.png?v=20260517" alt="AlgoRich" class="logo-img"
+                 onerror="if(!this.complete||this.naturalHeight===0){this.style.display='none';this.nextElementSibling.style.display='block';}">
             <h1 style="display:none; color:var(--green); margin:0; font-size:28px;">AlgoRich</h1>
             <p style="color:var(--sub); margin:0; font-size:12px;">algorich.everyoungrich.com</p>
         </div>
@@ -236,6 +238,7 @@
         <div class="summary-card">
             <div class="label">최근 스캔 주도주</div>
             <div class="value" id="scan-count">-</div>
+            <div class="sub" id="scan-count-sub" style="margin-top:4px; font-size:11px;"></div>
         </div>
         <div class="summary-card">
             <div class="label">현재 보유 종목</div>
@@ -274,8 +277,8 @@
 
     <footer>
         <div style="display:flex; align-items:center; gap:10px;">
-            <img src="./logo.png" alt="AlgoRich" style="height:25px; width:auto; opacity:0.8;"
-                 onerror="this.style.display='none';">
+            <img src="./logo.png?v=20260517" alt="AlgoRich" style="height:25px; width:auto; opacity:0.8;"
+                 onerror="if(!this.complete||this.naturalHeight===0){this.style.display='none';}">
             <span class="footer-text"><strong>AlgoRich Dashboard</strong> | Powered by EverYoungRich</span>
         </div>
         <span class="footer-text" id="last-update">업데이트 확인 중...</span>
@@ -392,7 +395,12 @@ function today() {
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 function esc(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return String(s)
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+        .replace(/'/g,'&#39;');
 }
 // 거래대금 포맷: 억 단위 숫자 → "1조 794억" / "794억"
 function formatAmount(val) {
@@ -466,7 +474,10 @@ function renderLeadStocks(rows, C) {
 
     const latestDate  = sortedDates[0] || '';
     const latestCount = latestDate ? grouped.get(latestDate).length : 0;
-    document.getElementById('scan-count').textContent = latestCount || '-';
+    document.getElementById('scan-count').textContent = latestDate ? String(latestCount) : '-';
+    // 기준 날짜를 요약카드 하단에 작은 글씨로 표시
+    const scanSubEl = document.getElementById('scan-count-sub');
+    if (scanSubEl) scanSubEl.textContent = latestDate ? '기준 ' + latestDate : '';
     document.getElementById('lead-badge').textContent = latestDate
         ? latestDate + ' · ' + latestCount + '건' : '최신';
 
@@ -474,22 +485,24 @@ function renderLeadStocks(rows, C) {
         const group = [...grouped.get(date)].sort((a, b) => (Number(b[C.amt]) || 0) - (Number(a[C.amt]) || 0));
 
         const rowsHtml = group.map(r => {
-            const rate  = parseFloat(r[C.rate])  || 0;
-            const price = parseFloat(r[C.price]) || 0;
-            const cls   = rate >= 0 ? 'up' : 'down';
-            const sign  = rate >= 0 ? '+' : '';
-            const amt   = formatAmount(r[C.amt]);
-            const code  = esc(r[C.code]);
-            const name  = esc(r[C.name]);
-            return `<tr onclick="openChartModal('${code}','${name}',${price},${rate})">
+            const rate    = parseFloat(r[C.rate])  || 0;
+            const price   = parseFloat(r[C.price]) || 0;
+            const cls     = rate >= 0 ? 'up' : 'down';
+            const sign    = rate >= 0 ? '+' : '';
+            const amt     = formatAmount(r[C.amt]);
+            const rawCode = String(r[C.code] || '').replace(/[^0-9A-Za-z]/g, '');
+            const code    = esc(rawCode);
+            const name    = esc(r[C.name]);
+            return `<tr class="lead-row" data-code="${code}" data-name="${name}" data-price="${price}" data-rate="${rate}">
                 <td>
                     <div>${name}</div>
                     <div class="sub">${code}</div>
                 </td>
                 <td style="text-align:right; white-space:nowrap;">
-                    <span class="${cls}">${sign}${rate.toFixed(2)}%</span>${amt
-                        ? ` <span style="color:var(--sub);font-size:11px;margin-left:6px;">${amt}</span>`
-                        : ''}
+                    <span class="${cls}">${sign}${rate.toFixed(2)}%</span>
+                </td>
+                <td style="text-align:right; white-space:nowrap; color:var(--sub); font-size:11px; font-weight:normal;">
+                    ${amt || '-'}
                 </td>
                 <td>${Number(price).toLocaleString()}원</td>
             </tr>`;
@@ -497,7 +510,23 @@ function renderLeadStocks(rows, C) {
 
         return `<div class="date-group">
             <div class="date-group-hdr">📅 ${esc(date)}<span class="dg-line"></span></div>
-            <table>${rowsHtml}</table>
+            <table>
+                <colgroup>
+                    <col style="width:42%">
+                    <col style="width:18%">
+                    <col style="width:18%">
+                    <col style="width:22%">
+                </colgroup>
+                <thead>
+                    <tr style="font-size:10px; color:var(--sub); text-transform:uppercase; letter-spacing:0.05em;">
+                        <td style="text-align:left;">종목</td>
+                        <td style="text-align:right;">등락률</td>
+                        <td style="text-align:right;">거래대금</td>
+                        <td style="text-align:right;">현재가</td>
+                    </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+            </table>
         </div>`;
     }).join('');
 }
@@ -535,13 +564,16 @@ function renderCandidates(rows, C) {
         const cls  = rate >= 0 ? 'up' : 'down';
         const sign = rate >= 0 ? '+' : '';
         const price = parseFloat(r[C.price]) || 0;
+        const rawCode = String(r[C.code] || '').replace(/[^0-9A-Za-z]/g, '');
+        const code = esc(rawCode);
+        const name = esc(r[C.name]);
         let instStar = '';
         if (C.inst !== null && parseFloat(r[C.inst]) > 0) instStar = '<span class="star">★</span>';
         else if (C.remark !== null && String(r[C.remark]||'').includes('기관')) instStar = '<span class="star">★</span>';
-        return `<tr onclick="openChartModal('${esc(r[C.code])}','${esc(r[C.name])}',${price},${rate})" style="cursor:pointer;">
+        return `<tr class="cand-row" data-code="${code}" data-name="${name}" data-price="${price}" data-rate="${rate}" style="cursor:pointer;">
             <td>
-                <div>${esc(r[C.name])}${instStar}</div>
-                <div class="sub">${esc(r[C.code])} · <span class="${cls}">${sign}${rate.toFixed(2)}%</span></div>
+                <div>${name}${instStar}</div>
+                <div class="sub">${code} · <span class="${cls}">${sign}${rate.toFixed(2)}%</span></div>
             </td>
             <td><span class="tag-watch">관심</span></td>
         </tr>`;
@@ -852,9 +884,22 @@ document.getElementById('chart-overlay').addEventListener('click', function(e) {
     if (e.target === this) closeChart();
 });
 
-// 초기 로딩 + 60초마다 갱신
-updateDashboard();
-setInterval(updateDashboard, 60000);
-</script>
-</body>
-</html>
+// ── 행 클릭 이벤트 위임 (data-* 속성 기반, 특수문자 안전) ───────────────
+function _delegateRowClick(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.addEventListener('click', (e) => {
+        const tr = e.target.closest('tr[data-code]');
+        if (!tr) return;
+        const code  = tr.dataset.code  || '';
+        const name  = tr.dataset.name  || '';
+        const price = parseFloat(tr.dataset.price) || 0;
+        const rate  = parseFloat(tr.dataset.rate)  || 0;
+        if (!code) return;
+        openChartModal(code, name, price, rate);
+    });
+}
+_delegateRowClick('lead-stock-table');
+_delegateRowClick('candidate-sections');
+
+// 초기 �
