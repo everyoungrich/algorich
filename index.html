@@ -583,10 +583,13 @@ function renderSummaryTrades(rows) {
 // ════════════════════════════════════════════════════════════
 
 // ── 네이버 fchart API ─────────────────────────────────────────
+// corsproxy.io: GitHub Pages에서 Naver API 직접 호출 시 CORS 차단됨
+const CORS_PROXY = 'https://corsproxy.io/?';
+
 async function fetchNaverChart(code, tab) {
     const { timeframe, count } = TAB_CONFIG[tab] || TAB_CONFIG['1Y'];
-    const url = `https://fchart.stock.naver.com/sise.nhn?symbol=${code}&timeframe=${timeframe}&count=${count}&requestType=0`;
-    const res  = await fetch(url);
+    const target = `https://fchart.stock.naver.com/sise.nhn?symbol=${code}&timeframe=${timeframe}&count=${count}&requestType=0`;
+    const res    = await fetch(CORS_PROXY + encodeURIComponent(target));
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const text = await res.text();
     const xml  = new DOMParser().parseFromString(text, 'text/xml');
@@ -611,8 +614,8 @@ async function fetchNaverChart(code, tab) {
 
 // ── 네이버 polling API ────────────────────────────────────────
 async function fetchNaverPolling(code) {
-    const url  = `https://polling.finance.naver.com/api/realtime/domestic/stock/${code}`;
-    const res  = await fetch(url);
+    const target = `https://polling.finance.naver.com/api/realtime/domestic/stock/${code}`;
+    const res    = await fetch(CORS_PROXY + encodeURIComponent(target));
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     const d    = json?.result?.areas?.[0]?.datas?.[0] || {};
