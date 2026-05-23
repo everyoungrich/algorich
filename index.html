@@ -339,8 +339,6 @@
 <script>
 // ── 설정 ─────────────────────────────────────────────────────
 const CHART_API_URL = 'https://script.google.com/macros/s/AKfycbzLx083Igw4x5jxR2ndLqtpZ_-SeuZALdUXO5qc7EDKEn_nqttruvKrA5cV9RUsPyoh/exec';
-const LEAD_CSV_URL  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRSUtXRGORylv3kPfUuzrl9RtNyS-okxqGLqGc7f18aF6H3ycFwNwq-_OlZIUN6QwJVoszvWKwxZNPh/pub?gid=1222820839&single=true&output=csv';
-const TRADE_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSqu0fljAyaRMgIgpKO37r9VxiBQJXoBPLZVg8k31u8L5R8vAxtmGqajSFAcZcfL7DWYy449VNfCNsc/pub?gid=1786490570&single=true&output=csv';
 
 // ── 전역 상태 ─────────────────────────────────────────────────
 let _chart       = null;
@@ -369,41 +367,6 @@ const MA_DEFS = [
     { key: 'MA200', period: 200, color: '#555555' },
 ];
 
-// ── CSV 파서 ──────────────────────────────────────────────────
-function parseCsv(text) {
-    const rows = [];
-    const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
-    for (const line of lines) {
-        if (!line.trim()) continue;
-        const cols = []; let cur = '', inQ = false;
-        for (let i = 0; i < line.length; i++) {
-            const ch = line[i];
-            if (ch === '"') { if (inQ && line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ; }
-            else if (ch===',' && !inQ) { cols.push(cur.trim()); cur=''; }
-            else cur += ch;
-        }
-        cols.push(cur.trim()); rows.push(cols);
-    }
-    return rows;
-}
-
-function buildLeadColMap(header) {
-    const m = {};
-    header.forEach((h, i) => { m[h.trim()] = i; });
-    const has11 = m['시간'] !== undefined;
-    return {
-        date:     m['날짜']         ?? 0,
-        code:     m['종목코드']     ?? (has11 ? 2 : 1),
-        name:     m['종목명']       ?? (has11 ? 3 : 2),
-        price:    m['현재가']       ?? m['종가'] ?? (has11 ? 4 : 3),
-        rate:     m['등락률']       ?? m['상승률 (%)'] ?? (has11 ? 5 : 4),
-        volRatio: m['거래량비']     ?? null,
-        amt:      m['거래대금']     ?? m['거래대금 (억)'] ?? (has11 ? 7 : 5),
-        inst:     m['기관수급']     ?? null,
-        status:   m['매매상태']     ?? null,
-        remark:   m['비고']         ?? (has11 ? null : 7),
-    };
-}
 
 function today() {
     const d = new Date();
@@ -426,19 +389,17 @@ function formatAmount(val) {
 // ── 메인 업데이트 ─────────────────────────────────────────────
 async function updateDashboard() {
     try {
-        const [lRes, tRes] = await Promise.all([fetch(LEAD_CSV_URL), fetch(TRADE_CSV_URL)]);
-        if (!lRes.ok) throw new Error('주도주 로딩 실패 (' + lRes.status + ')');
-        if (!tRes.ok) throw new Error('매매일지 로딩 실패 (' + tRes.status + ')');
+        const res = await fetch(CHART_API_URL + '?type=all');
+        if (!res.ok) throw new Error('API 오류 (' + res.status + ')');
+        const data = await res.json();
+        if (data.status !== 'ok') throw new Error(data.error || 'API 오류');
 
-        const leadAll  = parseCsv(await lRes.text());
-        const tradeAll = parseCsv(await tRes.text());
-        const C        = buildLeadColMap(leadAll[0] || []);
-        const leadRows = leadAll.slice(1);
-        const tradeRows = tradeAll.slice(1);
+        const leadRows  = data.leadStocks || [];
+        const tradeRows = data.trades     || [];
 
         buildHoldingsMap(tradeRows);
-        renderLeadStocks(leadRows, C);
-        renderCandidates(leadRows, C);
+        renderLeadStocks(leadRows);
+        renderCandidates(leadRows);
         renderSummaryTrades(tradeRows);
 
         document.getElementById('live-status').textContent = '● SYSTEM LIVE';
@@ -454,22 +415,21 @@ async function updateDashboard() {
 
 function buildHoldingsMap(rows) {
     _holdingsMap = {};
-    rows.filter(r => r[1] === '보유').forEach(r => {
-        const code = String(r[2] || '').padStart(6, '0');
-        _holdingsMap[code] = { buyPrice: parseFloat(r[5]) || 0 };
+    rows.filter(r => r.status === '보유').forEach(r => {
+        _holdingsMap[r.code] = { buyPrice: r.buyPrice || 0 };
     });
 }
 
-function renderLeadStocks(rows, C) {
+function renderLeadStocks(rows) {
     const el = document.getElementById('lead-stock-table');
-    if (!rows.length || !rows[0][C.date]) {
+    if (!rows.length || !rows[0].date) {
         document.getElementById('scan-count').textContent = '0';
         el.innerHTML = '<div style="color:var(--sub);font-size:12px;text-align:center;padding:40px 0;">기록된 데이터가 없습니다.</div>';
         return;
     }
     const grouped = new Map();
     rows.forEach(r => {
-        const d = r[C.date]; if (!d) return;
+        const d = r.date; if (!d) return;
         if (!grouped.has(d)) grouped.set(d, []);
         grouped.get(d).push(r);
     });
@@ -482,19 +442,18 @@ function renderLeadStocks(rows, C) {
     document.getElementById('lead-badge').textContent = latestDate ? latestDate + ' · ' + latestCount + '건' : '최신';
 
     el.innerHTML = sortedDates.map(date => {
-        const group = [...grouped.get(date)].sort((a, b) => (Number(b[C.amt]) || 0) - (Number(a[C.amt]) || 0));
+        const group = [...grouped.get(date)].sort((a, b) => (b.amt || 0) - (a.amt || 0));
         const rowsHtml = group.map(r => {
-            const rate    = parseFloat(r[C.rate])  || 0;
-            const price   = parseFloat(r[C.price]) || 0;
-            const cls     = rate >= 0 ? 'up' : 'down';
-            const sign    = rate >= 0 ? '+' : '';
-            const amt     = formatAmount(r[C.amt]);
-            const rawCode = String(r[C.code] || '').replace(/[^0-9A-Za-z]/g, '');
-            const code    = esc(rawCode);
-            const name    = esc(r[C.name]);
+            const rate  = r.changeRate || 0;
+            const price = r.close      || 0;
+            const cls   = rate >= 0 ? 'up' : 'down';
+            const sign  = rate >= 0 ? '+' : '';
+            const amt   = formatAmount(r.amt);
+            const code  = esc(String(r.code || '').replace(/[^0-9A-Za-z]/g, ''));
+            const name  = esc(r.name || '');
             return `<tr class="lead-row" data-code="${code}" data-name="${name}" data-price="${price}" data-rate="${rate}">
                 <td><div>${name}</div><div class="sub">${code}</div></td>
-                <td style="text-align:right;white-space:nowrap;"><span class="${cls}">${sign}${rate.toFixed(2)}%</span></td>
+                <td style="text-align:right;white-space:nowrap;"><span class="${cls}">${sign}${Number(rate).toFixed(2)}%</span></td>
                 <td style="text-align:right;white-space:nowrap;color:var(--sub);font-size:11px;font-weight:normal;">${amt||'-'}</td>
                 <td>${Number(price).toLocaleString()}원</td>
             </tr>`;
@@ -515,40 +474,33 @@ function renderLeadStocks(rows, C) {
     }).join('');
 }
 
-function renderCandidates(rows, C) {
+function renderCandidates(rows) {
     const el = document.getElementById('candidate-sections');
     if (!rows.length) {
         el.innerHTML = '<div class="strat-empty" style="text-align:center;padding:40px 0;">데이터 없음</div>';
         document.getElementById('cand-badge').textContent = '-';
         return;
     }
-    const allDates   = rows.map(r => r[C.date]).filter(Boolean);
+    const allDates   = rows.map(r => r.date).filter(Boolean);
     const latestDate = allDates.reduce((a,b) => a > b ? a : b, '');
-    const latestPool = rows.filter(r => r[C.date] === latestDate);
+    const latestPool = rows.filter(r => r.date === latestDate);
     const nhCands = latestPool.filter(r => {
-        const rate = parseFloat(r[C.rate]) || 0;
+        const rate = r.changeRate || 0;
         if (rate > 3.0) return false;
-        if (C.volRatio !== null && (parseFloat(r[C.volRatio]) || 999) > 50.0) return false;
-        if (C.status !== null) {
-            const st = String(r[C.status] || '').trim().toUpperCase();
-            if (st && st !== 'PENDING') return false;
-        }
         return true;
     });
     document.getElementById('cand-badge').textContent = nhCands.length + '건';
 
     function makeCandRow(r) {
-        const rate = parseFloat(r[C.rate]) || 0;
-        const cls  = rate >= 0 ? 'up' : 'down';
-        const sign = rate >= 0 ? '+' : '';
-        const price   = parseFloat(r[C.price]) || 0;
-        const rawCode = String(r[C.code] || '').replace(/[^0-9A-Za-z]/g, '');
-        const code = esc(rawCode), name = esc(r[C.name]);
-        let instStar = '';
-        if (C.inst !== null && parseFloat(r[C.inst]) > 0) instStar = '<span class="star">★</span>';
-        else if (C.remark !== null && String(r[C.remark]||'').includes('기관')) instStar = '<span class="star">★</span>';
+        const rate  = r.changeRate || 0;
+        const cls   = rate >= 0 ? 'up' : 'down';
+        const sign  = rate >= 0 ? '+' : '';
+        const price = r.close || 0;
+        const code  = esc(String(r.code || '').replace(/[^0-9A-Za-z]/g, ''));
+        const name  = esc(r.name || '');
+        const instStar = String(r.remark || '').includes('기관') ? '<span class="star">★</span>' : '';
         return `<tr class="cand-row" data-code="${code}" data-name="${name}" data-price="${price}" data-rate="${rate}" style="cursor:pointer;">
-            <td><div>${name}${instStar}</div><div class="sub">${code} · <span class="${cls}">${sign}${rate.toFixed(2)}%</span></div></td>
+            <td><div>${name}${instStar}</div><div class="sub">${code} · <span class="${cls}">${sign}${Number(rate).toFixed(2)}%</span></div></td>
             <td><span class="tag-watch">관심</span></td>
         </tr>`;
     }
@@ -567,11 +519,11 @@ function renderCandidates(rows, C) {
 }
 
 function renderSummaryTrades(rows) {
-    document.getElementById('holding-count').textContent = rows.filter(r => r[1]==='보유').length;
+    document.getElementById('holding-count').textContent = rows.filter(r => r.status === '보유').length;
     const mm   = today().slice(0,7);
-    const done = rows.filter(r => r[1]==='완료' && String(r[8]).startsWith(mm));
+    const done = rows.filter(r => r.status === '완료' && String(r.sellDate || '').startsWith(mm));
     if (done.length) {
-        const avg = done.reduce((s,r) => s+(parseFloat(r[10])||0), 0) / done.length;
+        const avg = done.reduce((s,r) => s + (r.profitRt || 0), 0) / done.length;
         const el  = document.getElementById('monthly-profit');
         el.textContent = (avg>=0?'+':'') + avg.toFixed(2) + '%';
         el.className   = 'value ' + (avg>=0?'up':'down');
@@ -582,79 +534,28 @@ function renderSummaryTrades(rows) {
 // 차트 모달
 // ════════════════════════════════════════════════════════════
 
-// ── CORS 프록시 설정 ──────────────────────────────────────────
-// 1순위: Apps Script 프록시 (안정적, 제3자 서버 불필요)
-//        → Apps Script doGet에 action=chart / action=price 핸들러 추가 후 활성화
-// 2순위: corsproxy.io 폴백 (Apps Script 핸들러 미적용 시 자동 전환)
-const CORS_PROXY = 'https://corsproxy.io/?';
-
-async function _proxyFetch(asUrl, directUrl, validateFn) {
-    // Apps Script 프록시 시도 (7초 타임아웃)
-    try {
-        const ctrl = new AbortController();
-        const tid  = setTimeout(() => ctrl.abort(), 7000);
-        const r    = await fetch(asUrl, { signal: ctrl.signal });
-        clearTimeout(tid);
-        if (r.ok) {
-            const text = await r.text();
-            if (validateFn(text)) return text;
-        }
-    } catch { /* timeout or AS not updated yet → fall through */ }
-
-    // corsproxy.io 폴백
-    const r2 = await fetch(CORS_PROXY + encodeURIComponent(directUrl));
-    if (!r2.ok) throw new Error('HTTP ' + r2.status);
-    return await r2.text();
-}
-
-// ── 네이버 fchart API ─────────────────────────────────────────
+// ── 차트 (KIS via Apps Script) ────────────────────────────────
 async function fetchNaverChart(code, tab) {
     const { timeframe, count } = TAB_CONFIG[tab] || TAB_CONFIG['1Y'];
-    const directUrl = `https://fchart.stock.naver.com/sise.nhn?symbol=${code}&timeframe=${timeframe}&count=${count}&requestType=0`;
-    const asUrl     = `${CHART_API_URL}?action=chart&code=${encodeURIComponent(code)}&tf=${timeframe}&count=${count}`;
+    const pdMap = { day: 'D', week: 'W', month: 'M' };
+    const periodDiv = pdMap[timeframe] || 'D';
 
-    const text  = await _proxyFetch(asUrl, directUrl, t => t.includes('<item'));
-    const xml   = new DOMParser().parseFromString(text, 'text/xml');
-    const items = xml.getElementsByTagName('item');
-    const data  = [];
-    for (let i = 0; i < items.length; i++) {
-        const d = items[i].getAttribute('data');
-        if (!d) continue;
-        const p = d.split('|');
-        if (!p[0] || p[0].length < 8) continue;
-        data.push({
-            date:   p[0],
-            open:   parseFloat(p[1]) || 0,
-            high:   parseFloat(p[2]) || 0,
-            low:    parseFloat(p[3]) || 0,
-            close:  parseFloat(p[4]) || 0,
-            volume: parseFloat(p[5]) || 0,
-        });
-    }
-    return data;
+    const url = `${CHART_API_URL}?type=chart&code=${encodeURIComponent(code)}&period=${count}&period_div=${periodDiv}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    if (json.status !== 'ok') throw new Error(json.error || 'chart API 오류');
+    return json.chart || [];
 }
 
-// ── 네이버 polling API ────────────────────────────────────────
-async function fetchNaverPolling(code) {
-    const directUrl = `https://polling.finance.naver.com/api/realtime/domestic/stock/${code}`;
-    const asUrl     = `${CHART_API_URL}?action=price&code=${encodeURIComponent(code)}`;
-
-    const text = await _proxyFetch(asUrl, directUrl, t => t.includes('"result"') || t.includes('"nv"'));
-    const json = JSON.parse(text);
-    const d    = json?.result?.areas?.[0]?.datas?.[0] || {};
-    return {
-        price:      d.nv  || d.closePrice || 0,
-        prevClose:  d.sv  || 0,
-        change:     d.cv  || 0,
-        changeRate: d.cr  || 0,
-        open:       d.ov  || 0,
-        high:       d.hv  || 0,
-        low:        d.lv  || 0,
-        volume:     d.tv  || 0,
-        marketCap:  d.marketSum || 0,
-        per:        d.per || 0,
-        pbr:        d.pbr || 0,
-    };
+// ── 종목 가격 + 수급 (KIS via Apps Script) ────────────────────
+async function fetchStockInfo(code) {
+    const url = `${CHART_API_URL}?type=stockinfo&code=${encodeURIComponent(code)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    if (json.status !== 'ok') throw new Error(json.error || 'stockinfo API 오류');
+    return json.stockInfo || {};
 }
 
 function dateToTime(s) {
@@ -686,16 +587,14 @@ function openChartModal(code, name, price, rate) {
     document.getElementById('modal-info-grid').innerHTML   = '<div style="color:var(--sub);font-size:11px;grid-column:span 4">로딩 중...</div>';
     document.getElementById('modal-supply-rows').innerHTML = '<div style="color:var(--sub);font-size:11px">로딩 중...</div>';
 
-    // 차트 + polling 병렬 로드
-    const chartPromise   = _loadChart(code, '1Y');
-    const pollingPromise = fetchNaverPolling(code).catch(() => null);
+    // 차트 + 종목정보 병렬 로드
+    const chartPromise    = _loadChart(code, '1Y');
+    const stockInfoPromise = fetchStockInfo(code).catch(() => null);
 
-    Promise.all([chartPromise, pollingPromise]).then(([, info]) => {
-        if (info) { _updateHeader(info); _renderInfoGrid(info); }
-        else { _renderInfoGridFallback(price); }
+    Promise.all([chartPromise, stockInfoPromise]).then(([, info]) => {
+        if (info) { _updateHeader(info); _renderInfoGrid(info); _renderSupply(info); }
+        else { _renderInfoGridFallback(price); document.getElementById('modal-supply-rows').innerHTML = '<div style="color:var(--sub);font-size:11px">수급 데이터 없음</div>'; }
     });
-
-    _fetchSupply(code);
 }
 
 // ── 탭 전환 ──────────────────────────────────────────────────
@@ -828,7 +727,7 @@ function _renderChart(candles) {
 function _updateHeader(info) {
     const price = info.price || _modalState.price;
     const rate  = info.changeRate || _modalState.rate;
-    const chg   = info.change || 0;
+    const chg   = info.priceChange || 0;
     const cls   = rate >= 0 ? 'up' : 'down';
     const sign  = rate >= 0 ? '+' : '';
     document.getElementById('modal-price').textContent = price > 0 ? Number(price).toLocaleString() + '원' : '-';
@@ -844,15 +743,13 @@ function _renderInfoGrid(info) {
     const h52   = highs.length ? Math.max(...highs) : 0;
     const l52   = lows.length  ? Math.min(...lows)  : 0;
 
-    const mc = info.marketCap || 0;
+    const mcB = info.marketCapB || 0;
     let mcStr = '-';
-    if (mc > 0) {
-        const mcB = Math.floor(mc / 1e8);
+    if (mcB > 0) {
         const jo = Math.floor(mcB / 10000), eok = mcB % 10000;
         mcStr = jo > 0 ? jo + '조' + (eok > 0 ? ' ' + eok + '억' : '') : mcB + '억';
     }
-    const tvB = (info.volume && (info.price || _modalState.price))
-        ? Math.floor(info.volume * (info.price || _modalState.price) / 1e8) : 0;
+    const tvB = info.tradingValue > 0 ? Math.floor(info.tradingValue / 1e8) : 0;
 
     const items = [
         { label: '전일',      val: Number(info.prevClose || 0).toLocaleString() + '원' },
@@ -879,20 +776,6 @@ function _renderInfoGridFallback(price) {
         `<div class="info-item" style="grid-column:span 3"><span class="info-label" style="color:var(--sub)">실시간 데이터를 가져올 수 없습니다</span></div>`;
 }
 
-// ── 수급 (Apps Script) ────────────────────────────────────────
-async function _fetchSupply(code) {
-    const el = document.getElementById('modal-supply-rows');
-    try {
-        const url = CHART_API_URL + '?action=supply&code=' + encodeURIComponent(code);
-        const res  = await fetch(url);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const json = await res.json();
-        if (json.error) throw new Error(json.error);
-        _renderSupply(json);
-    } catch (e) {
-        el.innerHTML = `<div style="color:var(--sub);font-size:11px">수급 데이터 없음<br><span style="font-size:10px">${esc(e.message)}</span></div>`;
-    }
-}
 
 function _renderSupply(info) {
     function fmtQ(n) {
