@@ -582,17 +582,39 @@ function renderSummaryTrades(rows) {
 // 차트 모달
 // ════════════════════════════════════════════════════════════
 
-// ── 네이버 fchart API ─────────────────────────────────────────
-// corsproxy.io: GitHub Pages에서 Naver API 직접 호출 시 CORS 차단됨
+// ── CORS 프록시 설정 ──────────────────────────────────────────
+// 1순위: Apps Script 프록시 (안정적, 제3자 서버 불필요)
+//        → Apps Script doGet에 action=chart / action=price 핸들러 추가 후 활성화
+// 2순위: corsproxy.io 폴백 (Apps Script 핸들러 미적용 시 자동 전환)
 const CORS_PROXY = 'https://corsproxy.io/?';
 
+async function _proxyFetch(asUrl, directUrl, validateFn) {
+    // Apps Script 프록시 시도 (7초 타임아웃)
+    try {
+        const ctrl = new AbortController();
+        const tid  = setTimeout(() => ctrl.abort(), 7000);
+        const r    = await fetch(asUrl, { signal: ctrl.signal });
+        clearTimeout(tid);
+        if (r.ok) {
+            const text = await r.text();
+            if (validateFn(text)) return text;
+        }
+    } catch { /* timeout or AS not updated yet → fall through */ }
+
+    // corsproxy.io 폴백
+    const r2 = await fetch(CORS_PROXY + encodeURIComponent(directUrl));
+    if (!r2.ok) throw new Error('HTTP ' + r2.status);
+    return await r2.text();
+}
+
+// ── 네이버 fchart API ─────────────────────────────────────────
 async function fetchNaverChart(code, tab) {
     const { timeframe, count } = TAB_CONFIG[tab] || TAB_CONFIG['1Y'];
-    const target = `https://fchart.stock.naver.com/sise.nhn?symbol=${code}&timeframe=${timeframe}&count=${count}&requestType=0`;
-    const res    = await fetch(CORS_PROXY + encodeURIComponent(target));
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const text = await res.text();
-    const xml  = new DOMParser().parseFromString(text, 'text/xml');
+    const directUrl = `https://fchart.stock.naver.com/sise.nhn?symbol=${code}&timeframe=${timeframe}&count=${count}&requestType=0`;
+    const asUrl     = `${CHART_API_URL}?action=chart&code=${encodeURIComponent(code)}&tf=${timeframe}&count=${count}`;
+
+    const text  = await _proxyFetch(asUrl, directUrl, t => t.includes('<item'));
+    const xml   = new DOMParser().parseFromString(text, 'text/xml');
     const items = xml.getElementsByTagName('item');
     const data  = [];
     for (let i = 0; i < items.length; i++) {
@@ -614,10 +636,11 @@ async function fetchNaverChart(code, tab) {
 
 // ── 네이버 polling API ────────────────────────────────────────
 async function fetchNaverPolling(code) {
-    const target = `https://polling.finance.naver.com/api/realtime/domestic/stock/${code}`;
-    const res    = await fetch(CORS_PROXY + encodeURIComponent(target));
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const json = await res.json();
+    const directUrl = `https://polling.finance.naver.com/api/realtime/domestic/stock/${code}`;
+    const asUrl     = `${CHART_API_URL}?action=price&code=${encodeURIComponent(code)}`;
+
+    const text = await _proxyFetch(asUrl, directUrl, t => t.includes('"result"') || t.includes('"nv"'));
+    const json = JSON.parse(text);
     const d    = json?.result?.areas?.[0]?.datas?.[0] || {};
     return {
         price:      d.nv  || d.closePrice || 0,
