@@ -97,8 +97,12 @@ function getLeadStocks() {
 // 매매일지 반환
 // ============================================================
 function getTrades() {
-  var sheet = SpreadsheetApp.openById(MAIN_DB_ID).getSheetByName(MAIN_SHEET_NAME);
-  if (!sheet) throw new Error('시트를 찾을 수 없음: ' + MAIN_SHEET_NAME);
+  var wb    = SpreadsheetApp.openById(MAIN_DB_ID);
+  // '1D-Rebound' 탭이 없으면 'NH-Sniper' 탭 시도, 둘 다 없으면 빈 배열 반환
+  var sheet = wb.getSheetByName(MAIN_SHEET_NAME)
+           || wb.getSheetByName('NH-Sniper')
+           || null;
+  if (!sheet) return [];
 
   var values = sheet.getDataRange().getValues();
   if (values.length <= 1) return [];
@@ -364,7 +368,4 @@ function toNum(val) {
 }
 
 // KIS 토큰 캐시 수동 초기화 — KIS_MODE 변경 후 GAS 편집기에서 한 번 실행
-function clearKisToken() {
-  CacheService.getScriptCache().remove('KIS_TOKEN');
-  Logger.log('KIS 토큰 캐시 삭제 완료');
-}
+function c

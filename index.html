@@ -387,30 +387,48 @@ function formatAmount(val) {
 }
 
 // ── 메인 업데이트 ─────────────────────────────────────────────
+// lead / trades를 분리 호출 → 한쪽 실패해도 나머지 정상 표시
 async function updateDashboard() {
-    try {
-        const res = await fetch(CHART_API_URL + '?type=all');
-        if (!res.ok) throw new Error('API 오류 (' + res.status + ')');
-        const data = await res.json();
-        if (data.status !== 'ok') throw new Error(data.error || 'API 오류');
+    const [leadResult, tradeResult] = await Promise.allSettled([
+        fetch(CHART_API_URL + '?type=lead').then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }),
+        fetch(CHART_API_URL + '?type=trades').then(r => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }),
+    ]);
 
-        const leadRows  = data.leadStocks || [];
-        const tradeRows = data.trades     || [];
+    let leadRows = [], tradeRows = [];
 
-        buildHoldingsMap(tradeRows);
-        renderLeadStocks(leadRows);
-        renderCandidates(leadRows);
-        renderSummaryTrades(tradeRows);
-
-        document.getElementById('live-status').textContent = '● SYSTEM LIVE';
-        document.getElementById('live-status').className   = '';
-        document.getElementById('last-update').textContent = 'Last Updated: ' + new Date().toLocaleTimeString('ko-KR');
-    } catch (e) {
-        console.error(e);
-        document.getElementById('live-status').textContent = '● SYNC ERROR';
-        document.getElementById('live-status').className   = 'error';
-        document.getElementById('last-update').textContent = '로딩 실패: ' + e.message;
+    if (leadResult.status === 'fulfilled') {
+        const d = leadResult.value;
+        if (d.status === 'ok') leadRows = d.leadStocks || [];
+        else console.warn('[AlgoRich] lead API 오류:', d.error);
+    } else {
+        console.error('[AlgoRich] lead fetch 실패:', leadResult.reason?.message);
     }
+
+    if (tradeResult.status === 'fulfilled') {
+        const d = tradeResult.value;
+        if (d.status === 'ok') tradeRows = d.trades || [];
+        else console.warn('[AlgoRich] trades API 오류:', d.error);
+    } else {
+        console.warn('[AlgoRich] trades fetch 실패:', tradeResult.reason?.message);
+    }
+
+    console.log(`[AlgoRich] 주도주 ${leadRows.length}건 / 매매 ${tradeRows.length}건`);
+
+    buildHoldingsMap(tradeRows);
+    renderLeadStocks(leadRows);
+    renderCandidates(leadRows);
+    renderSummaryTrades(tradeRows);
+
+    const hasData = leadRows.length > 0;
+    document.getElementById('live-status').textContent = hasData ? '● SYSTEM LIVE' : '● NO DATA';
+    document.getElementById('live-status').className   = hasData ? '' : 'error';
+    document.getElementById('last-update').textContent = 'Last Updated: ' + new Date().toLocaleTimeString('ko-KR');
 }
 
 function buildHoldingsMap(rows) {
@@ -851,3 +869,4 @@ setInterval(updateDashboard, 60000);
 </script>
 </body>
 </html>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
