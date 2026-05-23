@@ -78,7 +78,7 @@ function getLeadStocks() {
   var values = sheet.getDataRange().getValues();
   if (values.length <= 1) return [];
 
-  return values.slice(1).slice(-50).map(function(r) {
+  return values.slice(1).slice(-500).map(function(r) {
     return {
       date:       formatCell(r[0]),
       code:       String(r[1] || '').padStart(6, '0'),

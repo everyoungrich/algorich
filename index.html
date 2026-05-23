@@ -433,7 +433,7 @@ function renderLeadStocks(rows) {
         if (!grouped.has(d)) grouped.set(d, []);
         grouped.get(d).push(r);
     });
-    const sortedDates = [...grouped.keys()].sort((a, b) => b.localeCompare(a));
+    const sortedDates = [...grouped.keys()].sort((a, b) => b.localeCompare(a)).slice(0, 10);
     const latestDate  = sortedDates[0] || '';
     const latestCount = latestDate ? grouped.get(latestDate).length : 0;
     document.getElementById('scan-count').textContent = latestDate ? String(latestCount) : '-';
