@@ -128,36 +128,82 @@ function getTrades() {
 
 
 // ============================================================
-// 봉 차트 데이터 — KIS inquire-daily-itemchartprice (FHKST03010100)
+// 봉 차트 데이터 — Naver Finance (API 키 불필요, 무료)
 //
 // periodDiv: 'D' = 일봉 (기본)
 //            'W' = 주봉
 //            'M' = 월봉
-//
-// 날짜 범위는 봉 단위별로 충분히 넓게 잡아 period 개수 확보
 // ============================================================
 function getDailyChart(code, period, periodDiv) {
   period    = period    || 250;
   periodDiv = periodDiv || 'D';
 
+  try {
+    return _naverChart_(code, period, periodDiv);
+  } catch (e) {
+    // Naver 실패 시 KIS 폴백
+    try {
+      return _kisChart_(code, period, periodDiv);
+    } catch (e2) {
+      throw new Error('차트 조회 실패 (Naver: ' + e.message + ' / KIS: ' + e2.message + ')');
+    }
+  }
+}
+
+// ── Naver Finance 차트 (API 키 불필요) ──────────────────────────
+function _naverChart_(code, period, periodDiv) {
+  var tfMap = { 'D': 'day', 'W': 'week', 'M': 'month' };
+  var tf    = tfMap[periodDiv] || 'day';
+  var url   = 'https://fchart.stock.naver.com/sise.nhn'
+            + '?symbol=' + code
+            + '&timeframe=' + tf
+            + '&count=' + period
+            + '&requestType=0';
+
+  var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) {
+    throw new Error('HTTP ' + res.getResponseCode());
+  }
+
+  // XML 파싱: <item data="YYYYMMDD|open|high|low|close|volume"/>
+  var xml  = res.getContentText();
+  var rows = [];
+  var re   = /data="([^"]+)"/g;
+  var m;
+  while ((m = re.exec(xml)) !== null) {
+    var p = m[1].split('|');
+    if (p.length < 6) continue;
+    var close = toNum(p[4]);
+    if (!p[0] || !close) continue;
+    rows.push({
+      date:   p[0],           // YYYYMMDD
+      open:   toNum(p[1]),
+      high:   toNum(p[2]),
+      low:    toNum(p[3]),
+      close:  close,
+      volume: toNum(p[5])
+    });
+  }
+  if (!rows.length) throw new Error('Naver 응답 파싱 결과 0건');
+  return rows;
+}
+
+// ── KIS 차트 폴백 (실전 URL 고정 — 차트는 항상 실전 서버) ──────
+function _kisChart_(code, period, periodDiv) {
   var p      = PropertiesService.getScriptProperties();
   var appKey = p.getProperty('KIS_APP_KEY');
   var secret = p.getProperty('KIS_APP_SECRET');
-  if (!appKey || !secret) {
-    throw new Error('Script Properties 미설정 — KIS_APP_KEY / KIS_APP_SECRET 추가 필요');
-  }
+  if (!appKey || !secret) throw new Error('KIS_APP_KEY 미설정');
 
-  var token = _kisToken_(appKey, secret);
-  var base  = _kisBase_();
+  // 차트·시세는 실전 서버에서만 제공 (모의 서버 불가)
+  var base  = 'https://openapi.koreainvestment.com:9443';
+  var token = _kisToken_(appKey, secret, base);
 
   var now   = new Date();
   var today = Utilities.formatDate(now, 'Asia/Seoul', 'yyyyMMdd');
-
-  // 봉 단위별 조회 범위 (캘린더 일수)
-  var lookbackDays = periodDiv === 'M' ? period * 35   // 월봉: 약 3년
-                   : periodDiv === 'W' ? period * 10   // 주봉: 약 5년
-                   :                     period * 2;   // 일봉: 약 1년
-
+  var lookbackDays = periodDiv === 'M' ? period * 35
+                   : periodDiv === 'W' ? period * 10
+                   :                     period * 2;
   var past  = new Date(now.getTime() - lookbackDays * 24 * 3600 * 1000);
   var start = Utilities.formatDate(past, 'Asia/Seoul', 'yyyyMMdd');
 
@@ -184,15 +230,13 @@ function getDailyChart(code, period, periodDiv) {
   });
 
   var output = JSON.parse(res.getContentText()).output2 || [];
-
-  // output2: 최신→과거 순. period개 슬라이스 후 reverse → 과거→최신
   return output
     .filter(function(d) { return d.stck_bsop_date; })
     .slice(0, period)
     .reverse()
     .map(function(d) {
       return {
-        date:   d.stck_bsop_date,   // YYYYMMDD
+        date:   d.stck_bsop_date,
         open:   toNum(d.stck_oprc),
         high:   toNum(d.stck_hgpr),
         low:    toNum(d.stck_lwpr),
@@ -313,12 +357,14 @@ function _kisBase_() {
     : 'https://openapivts.koreainvestment.com:29443';
 }
 
-function _kisToken_(appKey, secret) {
+function _kisToken_(appKey, secret, base) {
+  base = base || _kisBase_();
   var cache  = CacheService.getScriptCache();
-  var cached = cache.get('KIS_TOKEN');
+  var cacheKey = 'KIS_TOKEN_' + (base.indexOf('vts') > -1 ? 'mock' : 'real');
+  var cached = cache.get(cacheKey);
   if (cached) return cached;
 
-  var res = UrlFetchApp.fetch(_kisBase_() + '/oauth2/tokenP', {
+  var res = UrlFetchApp.fetch(base + '/oauth2/tokenP', {
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify({
@@ -331,7 +377,7 @@ function _kisToken_(appKey, secret) {
 
   var token = JSON.parse(res.getContentText()).access_token;
   if (!token) throw new Error('KIS 토큰 발급 실패 — APP_KEY / APP_SECRET 확인');
-  cache.put('KIS_TOKEN', token, 21600);  // 6시간 캐시
+  cache.put(cacheKey, token, 21600);  // 6시간 캐시
   return token;
 }
 
@@ -368,4 +414,7 @@ function toNum(val) {
 }
 
 // KIS 토큰 캐시 수동 초기화 — KIS_MODE 변경 후 GAS 편집기에서 한 번 실행
-function c
+function clearKisToken() {
+  CacheService.getScriptCache().remove('KIS_TOKEN');
+  Logger.log('KIS 토큰 캐시 삭제 완료');
+}
