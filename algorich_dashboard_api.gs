@@ -139,16 +139,32 @@ function getDailyChart(code, period, periodDiv) {
   period    = period    || 250;
   periodDiv = periodDiv || 'D';
 
+  // GAS CacheService — 동일 요청 1시간 캐시 (장 종료 후 반복 요청 최적화)
+  var cacheKey = 'chart_' + code + '_' + period + '_' + periodDiv;
+  var cache    = CacheService.getScriptCache();
+  var cached   = cache.get(cacheKey);
+  if (cached) {
+    try { return JSON.parse(cached); } catch(_) { /* 파싱 실패 시 재조회 */ }
+  }
+
+  var result;
   try {
-    return _naverChart_(code, period, periodDiv);
+    result = _naverChart_(code, period, periodDiv);
   } catch (e) {
     // Naver 실패 시 KIS 폴백
     try {
-      return _kisChart_(code, period, periodDiv);
+      result = _kisChart_(code, period, periodDiv);
     } catch (e2) {
       throw new Error('차트 조회 실패 (Naver: ' + e.message + ' / KIS: ' + e2.message + ')');
     }
   }
+
+  // 캐시 저장 (1시간 = 3600초, 최대 100KB)
+  try {
+    var json = JSON.stringify(result);
+    if (json.length < 100000) cache.put(cacheKey, json, 3600);
+  } catch(_) {}
+  return result;
 }
 
 // ── Naver Finance 차트 (API 키 불필요) ──────────────────────────

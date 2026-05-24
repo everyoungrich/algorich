@@ -755,6 +755,7 @@ let _activeStrat   = 'nh';
 let _activeJFilter = 'all';
 let _maCache       = {};   // code → { candles, ma5, ma20, ma200 }
 let _maAnalyzing   = false;
+let _chartCache    = {};   // 'code_tab' → candles (세션 내 탭 전환 즉시 로딩)
 
 // ── 유틸 ─────────────────────────────────────────────────────
 function esc(s) {
@@ -1460,8 +1461,33 @@ function computeStats(trades) {
 // ═══════════════════════════════════════════════════════════
 async function fetchChart(code, tab) {
     const { timeframe, count } = TAB_CONFIG[tab] || TAB_CONFIG['1Y'];
+    const tfMap = { day:'day', week:'week', month:'month' };
     const pdMap = { day:'D', week:'W', month:'M' };
-    const url = API_URL + '?type=chart&code=' + encodeURIComponent(code) + '&period=' + count + '&period_div=' + (pdMap[timeframe]||'D');
+
+    // ① Naver Finance 직접 호출 (GAS 우회 → ~10배 빠름)
+    try {
+        const naverUrl = 'https://fchart.stock.naver.com/sise.nhn'
+            + '?symbol=' + encodeURIComponent(code)
+            + '&timeframe=' + (tfMap[timeframe]||'day')
+            + '&count=' + count + '&requestType=0';
+        const res = await fetch(naverUrl);
+        if (res.ok) {
+            const xml = await res.text();
+            const rows = [], re = /data="([^"]+)"/g; let m;
+            while ((m = re.exec(xml)) !== null) {
+                const p = m[1].split('|');
+                if (p.length < 6) continue;
+                const close = Number(p[4]);
+                if (!p[0] || !close) continue;
+                rows.push({ date:p[0], open:Number(p[1]), high:Number(p[2]), low:Number(p[3]), close, volume:Number(p[5]) });
+            }
+            if (rows.length) return rows;
+        }
+    } catch(_) { /* CORS 차단 시 GAS로 폴백 */ }
+
+    // ② GAS 폴백
+    const url = API_URL + '?type=chart&code=' + encodeURIComponent(code)
+        + '&period=' + count + '&period_div=' + (pdMap[timeframe]||'D');
     const res = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
@@ -1516,12 +1542,24 @@ function toggleMA(key) {
     if (_maSeries[key]) _maSeries[key].applyOptions({ visible: _maVisible[key] });
 }
 async function _loadChart(code, tab) {
+    const cacheKey = code + '_' + tab;
     const msgEl = document.getElementById('chart-msg');
-    msgEl.style.display = 'flex'; msgEl.textContent = '차트 데이터 로딩 중...';
+
+    // 캐시 히트 → 즉시 렌더
+    if (_chartCache[cacheKey]) {
+        _destroyChart();
+        _currentCnds = _chartCache[cacheKey];
+        _renderChart(_chartCache[cacheKey]);
+        _updateH52Badge(_chartCache[cacheKey]);
+        return _chartCache[cacheKey];
+    }
+
+    msgEl.style.display = 'flex'; msgEl.textContent = '차트 로딩 중...';
     _destroyChart();
     const candles = await fetchChart(code, tab).catch(e => { msgEl.textContent = '로딩 실패: ' + e.message; return null; });
     if (!candles) return null;
     if (!candles.length) { msgEl.textContent = '차트 데이터 없음'; return null; }
+    _chartCache[cacheKey] = candles;   // 세션 캐시 저장
     _currentCnds = candles;
     _renderChart(candles);
     _updateH52Badge(candles);
@@ -1597,16 +1635,19 @@ function _renderInfoGrid(info) {
     let mcStr = '-';
     if (mcB>0) { const jo=Math.floor(mcB/10000),eok=mcB%10000; mcStr=jo>0?jo+'조'+(eok>0?' '+eok+'억':''):mcB+'억'; }
     const tvB = info.tradingValue>0?Math.floor(info.tradingValue/1e8):0;
+    const today = new Date().toLocaleDateString('ko-KR', {year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\. /g,'.').replace(/\.$/,'');
     const items = [
-        {label:'전일',val:fmtNum(info.prevClose||0)+'원'},{label:'시가',val:fmtNum(info.open||0)+'원'},
+        {label:'전일종가',val:fmtNum(info.prevClose||0)+'원'},{label:'시가',val:fmtNum(info.open||0)+'원'},
         {label:'고가',val:fmtNum(info.high||0)+'원',cls:'up'},{label:'저가',val:fmtNum(info.low||0)+'원',cls:'down'},
         {label:'거래량',val:info.volume>0?fmtNum(info.volume)+'주':'-'},{label:'거래대금',val:tvB>0?fmtAmt(tvB):'-'},
-        {label:'시총',val:mcStr},{label:'PER',val:info.per>0?Number(info.per).toFixed(1)+'x':'-'},
+        {label:'시총',val:mcStr},{label:'PER / PBR',val:(info.per>0?Number(info.per).toFixed(1)+'x':'-')+' / '+(info.pbr>0?Number(info.pbr).toFixed(1)+'x':'-')},
         {label:'52주 최고',val:h52>0?fmtNum(h52)+'원':'-',cls:'up'},{label:'52주 최저',val:l52>0?fmtNum(l52)+'원':'-',cls:'down'},
     ];
-    document.getElementById('modal-info-grid').innerHTML = items.map(it =>
-        '<div class="info-item"><span class="info-label">'+it.label+'</span><span class="info-val'+(it.cls?' '+it.cls:'')+'">'+it.val+'</span></div>'
-    ).join('');
+    document.getElementById('modal-info-grid').innerHTML =
+        '<div style="grid-column:span 4;font-size:10px;color:var(--sub);margin-bottom:4px">📅 기준일: ' + today + ' 장 종료 기준 (KIS 실시간)</div>' +
+        items.map(it =>
+            '<div class="info-item"><span class="info-label">'+it.label+'</span><span class="info-val'+(it.cls?' '+it.cls:'')+'">'+it.val+'</span></div>'
+        ).join('');
 }
 function _renderInfoGridFallback(price) {
     document.getElementById('modal-info-grid').innerHTML =
@@ -1614,18 +1655,46 @@ function _renderInfoGridFallback(price) {
         '<div class="info-item" style="grid-column:span 3"><span class="info-label" style="color:var(--sub)">실시간 데이터를 가져올 수 없습니다</span></div>';
 }
 function _renderSupply(info) {
-    function fmtQ(n) {
-        if (n===null||n===undefined||n==='') return '<span style="color:var(--sub)">-</span>';
-        return '<span class="supply-val '+(n>0?'up':'down')+'">'+(n>0?'+':'')+fmtNum(n)+'주</span>';
+    // amt: 백만원 단위 → 억원 표시
+    function fmtAmt_(manwon) {
+        if (manwon === null || manwon === undefined || manwon === '') return '<span style="color:var(--sub)">-</span>';
+        const v = Number(manwon);
+        const sign = v >= 0 ? '+' : '';
+        const cls  = v > 0 ? 'up' : v < 0 ? 'down' : '';
+        const eok  = v / 100;  // 백만원 → 억원
+        const disp = Math.abs(eok) >= 1
+            ? sign + eok.toFixed(1) + '억'
+            : sign + v.toFixed(0) + '백만';
+        return '<span class="supply-val ' + cls + '">' + disp + '</span>';
     }
-    const detail = [
-        info.fnncNet?'금투 '+(info.fnncNet>0?'+':'')+fmtNum(info.fnncNet):'',
-        info.ivtrNet?'투신 '+(info.ivtrNet>0?'+':'')+fmtNum(info.ivtrNet):'',
-        info.prvtNet?'사모 '+(info.prvtNet>0?'+':'')+fmtNum(info.prvtNet):'',
-    ].filter(Boolean).join(' / ');
-    document.getElementById('modal-supply-rows').innerHTML = [
-        {label:'기관',net:info.instNet,detail},{label:'외국인',net:info.frnNet,detail:''},{label:'개인',net:info.indvNet,detail:''},
-    ].map(r => '<div class="supply-row"><span class="supply-label">'+r.label+'</span><div style="flex:1;text-align:right;">'+fmtQ(r.net)+(r.detail?'<div class="supply-detail">'+r.detail+'</div>':'')+'</div></div>').join('');
+    // 기관 세부 (금투/투신/사모) — 억원 단위
+    function detailAmt(val, label) {
+        if (!val) return '';
+        const eok = (val / 100).toFixed(1);
+        return label + ' ' + (val > 0 ? '+' : '') + eok + '억';
+    }
+    const today = new Date().toLocaleDateString('ko-KR', {year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\. /g,'.').replace(/\.$/,'');
+    const instDetail = [
+        detailAmt(info.fnncNetAmt||info.fnncNet, '금투'),
+        detailAmt(info.ivtrNetAmt||info.ivtrNet, '투신'),
+        detailAmt(info.prvtNetAmt||info.prvtNet, '사모'),
+    ].filter(Boolean).join(' · ');
+
+    const rows = [
+        { label:'기관',   amt: info.instNetAmt, detail: instDetail },
+        { label:'외국인', amt: info.frnNetAmt,  detail: '' },
+        { label:'개인',   amt: info.indvNetAmt, detail: '' },
+    ];
+    document.getElementById('modal-supply-rows').innerHTML =
+        '<div style="font-size:10px;color:var(--sub);margin-bottom:8px">📅 기준일: ' + today + ' · 순매수 금액 기준</div>' +
+        rows.map(r =>
+            '<div class="supply-row">' +
+            '<span class="supply-label">' + r.label + '</span>' +
+            '<div style="flex:1;text-align:right;">' +
+            fmtAmt_(r.amt) +
+            (r.detail ? '<div class="supply-detail" style="font-size:10px;color:var(--sub);margin-top:2px">' + r.detail + '</div>' : '') +
+            '</div></div>'
+        ).join('');
 }
 function _destroyChart() {
     if (_chart) {
