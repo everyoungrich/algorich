@@ -2,6 +2,9 @@
 .env
 google_credentials.json
 
+# 레거시 — GitHub에 올리지 않음
+archive/
+
 # Python
 __pycache__/
 *.pyc

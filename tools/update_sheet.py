@@ -1,8 +1,18 @@
 # -*- coding: utf-8 -*-
+import os
 import sys
 import pandas as pd
+from dotenv import load_dotenv
+load_dotenv()
+
 from utils import GoogleSheetsManager
-from trader_final import KISBroker, APP_KEY, APP_SECRET, ACCOUNT_NO, MODE
+from brokers import KISBroker
+
+REAL_APP_KEY    = os.getenv("KIS_REAL_APP_KEY", "")
+REAL_APP_SECRET = os.getenv("KIS_REAL_APP_SECRET", "")
+MOCK_APP_KEY    = os.getenv("KIS_MOCK_APP_KEY", "")
+MOCK_APP_SECRET = os.getenv("KIS_MOCK_APP_SECRET", "")
+ACCOUNT_NO      = os.getenv("KIS_ACCOUNT_NO", "46601260")
 
 def update():
     gs_manager = GoogleSheetsManager()
@@ -24,7 +34,11 @@ def update():
 
     # Now fetch using broker, but we don't pass gs_manager so it doesn't log automatically.
     # We will log it manually here.
-    broker = KISBroker(APP_KEY, APP_SECRET, ACCOUNT_NO, MODE, gs_manager=None)
+    broker = KISBroker(
+        ACCOUNT_NO, gs_manager=None,
+        real_app_key=REAL_APP_KEY, real_app_secret=REAL_APP_SECRET,
+        mock_app_key=MOCK_APP_KEY, mock_app_secret=MOCK_APP_SECRET
+    )
     
     # We will just run the scan logic manually to intercept the date
     targets = broker.scan_s_class_targets()

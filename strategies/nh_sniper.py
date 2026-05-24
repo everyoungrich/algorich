@@ -125,12 +125,25 @@ class NHSniperStrategy(BaseStrategy):
                     holding_codes.discard(code)
             time.sleep(0.3)
 
-        # 매수 후보 탐색
-        budget_per_stock = tot_eval * 0.10
-        can_buy = max(0, 10 - len(holding_codes))
+        # 매수 후보 탐색 — 소액 안전 사이징 (종목당 25%, 최대 3종목, 현금 25% 유지)
+        budget_per_stock = tot_eval * 0.25
+        cash_reserve     = tot_eval * 0.25   # 항상 유지할 예비현금
+        max_positions    = 3
 
-        if can_buy <= 0 or cash < budget_per_stock * 0.9:
-            write_log(f"[NH-Sniper] 매수 슬롯 없음 (보유:{len(holding_codes)}종목, 현금:{cash:,.0f}원)")
+        can_buy = max(0, max_positions - len(holding_codes))
+
+        # 현금 가드: 매수 후에도 cash_reserve 이상 남아 있어야 매수
+        available_cash = max(0, cash - cash_reserve)
+        slots_by_cash  = int(available_cash // budget_per_stock) if budget_per_stock > 0 else 0
+        can_buy = min(can_buy, slots_by_cash)
+
+        if can_buy <= 0:
+            write_log(
+                f"[NH-Sniper] 매수 슬롯 없음 "
+                f"(보유:{len(holding_codes)}/{max_positions}종목, "
+                f"현금:{cash:,.0f}원, 예비유지:{int(cash_reserve):,}원, "
+                f"종목당예산:{int(budget_per_stock):,}원)"
+            )
             return
 
         watchlist = self.gs_manager.get_past_lead_stocks([1, 2]) if self.gs_manager else []

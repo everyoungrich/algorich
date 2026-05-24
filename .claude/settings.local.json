@@ -5,7 +5,13 @@
       "Bash(git push *)",
       "PowerShell(git *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(python *)",
+      "Bash(git commit *)",
+      "Bash(curl -s \"https://docs.google.com/spreadsheets/d/e/2PACX-1vRSUtXRGORylv3kPfUuzrl9RtNyS-okxqGLqGc7f18aF6H3ycFwNwq-_OlZIUN6QwJVoszvWKwxZNPh/pub?gid=1222820839&single=true&output=csv\")",
+      "Bash(curl -v -L \"https://docs.google.com/spreadsheets/d/e/2PACX-1vRSUtXRGORylv3kPfUuzrl9RtNyS-okxqGLqGc7f18aF6H3ycFwNwq-_OlZIUN6QwJVoszvWKwxZNPh/pub?gid=1222820839&single=true&output=csv\")",
+      "Bash(curl -sL \"https://script.google.com/macros/s/AKfycbzgCvzFoam_X7Vhfu0ugdcGVE665KcbtINWRPo8d03jQPvXhYuMKEHalRjO6TYxEPuY/exec?type=lead\")",
+      "Bash(python3 -c ' *)"
     ]
   }
 }

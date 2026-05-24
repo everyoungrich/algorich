@@ -18,18 +18,21 @@ from strategies import NHSniperStrategy
 # =====================================================================
 load_dotenv()
 
-APP_KEY = os.getenv("KIS_APP_KEY", "PSMx5uBusDfehqyC9Pj9iN8YDsiOi9uCBy9d")
-APP_SECRET = os.getenv("KIS_APP_SECRET", "WPtn2ND2LmVP8O0ULxMlrx8mkZGxNs1C1vwTeufma2CFCoj8F77jtzw5u6AKT0J0XNSA3SUzrAFoUy4F560esj7ZxFEiaHjPWAhj7CRuhkKHPGgToRYuKUh/sW8v5tWu0IiUnhyALCrbaklOfBp51LufSLvQd5jYrDgGhpJCu+WVMKkB/5c=")
-ACCOUNT_NO = os.getenv("KIS_ACCOUNT_NO", "46601260")
-MODE = str(os.getenv("KIS_MODE", "0"))
+REAL_APP_KEY    = os.getenv("KIS_REAL_APP_KEY", "")
+REAL_APP_SECRET = os.getenv("KIS_REAL_APP_SECRET", "")
+MOCK_APP_KEY    = os.getenv("KIS_MOCK_APP_KEY", "")
+MOCK_APP_SECRET = os.getenv("KIS_MOCK_APP_SECRET", "")
+ACCOUNT_NO      = os.getenv("KIS_ACCOUNT_NO", "46601260")
 
 missing_vars = []
-if not APP_KEY: missing_vars.append("APP_KEY")
-if not APP_SECRET: missing_vars.append("APP_SECRET")
-if not ACCOUNT_NO: missing_vars.append("ACCOUNT_NO")
+if not REAL_APP_KEY:    missing_vars.append("KIS_REAL_APP_KEY")
+if not REAL_APP_SECRET: missing_vars.append("KIS_REAL_APP_SECRET")
+if not MOCK_APP_KEY:    missing_vars.append("KIS_MOCK_APP_KEY")
+if not MOCK_APP_SECRET: missing_vars.append("KIS_MOCK_APP_SECRET")
+if not ACCOUNT_NO:      missing_vars.append("KIS_ACCOUNT_NO")
 
 if missing_vars:
-    print("[System] ===== 필수 환경변수 누락 =====")
+    print(f"[System] ===== 필수 환경변수 누락: {', '.join(missing_vars)} =====")
     sys.exit(1)
 
 
@@ -78,15 +81,19 @@ def run_424_recovery(broker, gs_manager):
 
 
 if __name__ == "__main__":
-    write_log(f"=== [V4.0 NH-Sniper Agent] 신고가 상승음봉 자동매매 엔진 개시 (MODE={MODE}) ===")
+    write_log("=== [V4.0 NH-Sniper Agent] 신고가 상승음봉 자동매매 엔진 개시 (시세=실전키, 주문=모의키) ===")
 
     # 1. 초기화 (Utils, Broker, Strategy)
     gs_manager = GoogleSheetsManager()
-    kis_broker = KISBroker(APP_KEY, APP_SECRET, ACCOUNT_NO, MODE, gs_manager=gs_manager)
+    kis_broker = KISBroker(
+        ACCOUNT_NO, gs_manager=gs_manager,
+        real_app_key=REAL_APP_KEY, real_app_secret=REAL_APP_SECRET,
+        mock_app_key=MOCK_APP_KEY, mock_app_secret=MOCK_APP_SECRET
+    )
     strategy = NHSniperStrategy(broker=kis_broker, gs_manager=gs_manager)
-    
-    write_log(f"[환경확인] MODE={MODE}, BASE_URL={kis_broker.base_url}")
-    write_log(f"[계좌확인] CANO={kis_broker.cano}, ACNT_PRDT_CD='{kis_broker.acnt_prdt_cd}', MODE={MODE}")
+
+    write_log(f"[환경확인] 시세URL={kis_broker.REAL_BASE_URL} / 주문URL={kis_broker.MOCK_BASE_URL}")
+    write_log(f"[계좌확인] CANO={kis_broker.cano}, ACNT_PRDT_CD='{kis_broker.acnt_prdt_cd}'")
 
     # 백필 로직 1회 호출 (주석 처리 - build_watchlist 에러 발생)
     init_token = kis_broker.get_access_token()

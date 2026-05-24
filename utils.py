@@ -89,6 +89,7 @@ class GoogleSheetsManager:
                 self.logged_today.add(log_key)
                 return True
             except Exception as e:
+                write_log(f"[log_lead_stock 오류 attempt {attempt+1}/3] {repr(e)}")
                 time.sleep(10)
         return False
 
