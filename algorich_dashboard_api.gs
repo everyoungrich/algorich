@@ -293,38 +293,65 @@ function getStockInfo(code) {
     'custtype':      'P'
   };
 
-  // ── [1] 현재가 ──────────────────────────────────────────
-  var priceRes = UrlFetchApp.fetch(
-    base + '/uapi/domestic-stock/v1/quotations/inquire-price'
-      + '?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=' + code,
-    {
-      method: 'get',
-      headers: _mergeHdr_(baseHdr, 'FHKST01010100'),
-      muteHttpExceptions: true
+  // ── [1] 현재가 — 실패해도 빈 객체로 진행 ──────────────
+  var pd = {};
+  var priceErr = '';
+  try {
+    var priceRes = UrlFetchApp.fetch(
+      base + '/uapi/domestic-stock/v1/quotations/inquire-price'
+        + '?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=' + code,
+      {
+        method: 'get',
+        headers: _mergeHdr_(baseHdr, 'FHKST01010100'),
+        muteHttpExceptions: true
+      }
+    );
+    var priceJson = JSON.parse(priceRes.getContentText());
+    if (priceJson.rt_cd === '0' && priceJson.output) {
+      pd = priceJson.output;
+    } else {
+      priceErr = 'rt_cd=' + (priceJson.rt_cd || '?') + ' msg=' + (priceJson.msg1 || '');
     }
-  );
-  var pd = JSON.parse(priceRes.getContentText()).output || {};
+  } catch(e) {
+    priceErr = String(e.message || e);
+  }
 
-  // ── [2] 투자자별 순매수 ────────────────────────────────
-  var invRes = UrlFetchApp.fetch(
-    base + '/uapi/domestic-stock/v1/quotations/inquire-investor'
-      + '?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=' + code,
-    {
-      method: 'get',
-      headers: _mergeHdr_(baseHdr, 'FHKST01010900'),
-      muteHttpExceptions: true
+  // ── [2] 투자자별 순매수 — 실패해도 빈 객체로 진행 ──────
+  var inv = {};
+  var invErr = '';
+  var dataDate = '';
+  try {
+    var invRes = UrlFetchApp.fetch(
+      base + '/uapi/domestic-stock/v1/quotations/inquire-investor'
+        + '?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=' + code,
+      {
+        method: 'get',
+        headers: _mergeHdr_(baseHdr, 'FHKST01010900'),
+        muteHttpExceptions: true
+      }
+    );
+    var invJson = JSON.parse(invRes.getContentText());
+    if (invJson.rt_cd === '0' && invJson.output && invJson.output.length > 0) {
+      inv = invJson.output[0];
+      // 실제 데이터 기준일: 마지막 영업일 날짜
+      var rawDate = String(inv.stck_bsop_date || '');  // YYYYMMDD
+      dataDate = rawDate.length === 8
+        ? rawDate.slice(0,4) + '.' + rawDate.slice(4,6) + '.' + rawDate.slice(6,8)
+        : '';
+    } else {
+      invErr = 'rt_cd=' + (invJson.rt_cd || '?') + ' msg=' + (invJson.msg1 || '');
     }
-  );
-  // output 배열 첫 번째 = 당일(최근 영업일) 데이터
-  var invArr = JSON.parse(invRes.getContentText()).output || [];
-  var inv    = invArr[0] || {};
+  } catch(e) {
+    invErr = String(e.message || e);
+  }
 
-  // 실제 데이터 기준일: inquire-investor output의 stck_bsop_date
-  // 예) 주말·공휴일 조회 시 → 마지막 영업일 날짜가 반환됨
-  var rawDate   = String(inv.stck_bsop_date || '');                        // YYYYMMDD
-  var dataDate  = rawDate.length === 8
-    ? rawDate.slice(0,4) + '.' + rawDate.slice(4,6) + '.' + rawDate.slice(6,8)
-    : '';   // 파싱 실패 시 빈 문자열 → 프론트에서 '-' 처리
+  // dataDate를 inquire-price에서도 보완 (inquire-investor 실패 시)
+  if (!dataDate) {
+    var rawPriceDate = String(pd.stck_bsop_date || '');
+    if (rawPriceDate.length === 8) {
+      dataDate = rawPriceDate.slice(0,4) + '.' + rawPriceDate.slice(4,6) + '.' + rawPriceDate.slice(6,8);
+    }
+  }
 
   // prdy_vrss_sign: '1'상한 '2'상승 '3'보합 '4'하한 '5'하락
   var sign    = String(pd.prdy_vrss_sign || '3');
@@ -369,6 +396,10 @@ function getStockInfo(code) {
     fnncNetAmt: toNum(inv.fnnc_invt_ntby_tr_pbmn), // 금융투자
     ivtrNetAmt: toNum(inv.invt_trsf_ntby_tr_pbmn), // 투신
     prvtNetAmt: toNum(inv.prmr_fund_ntby_tr_pbmn), // 사모
+
+    // ── 디버그 (빈 문자열이면 정상) ──
+    _priceErr: priceErr,
+    _invErr:   invErr,
   };
 }
 

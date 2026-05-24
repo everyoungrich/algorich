@@ -1526,7 +1526,22 @@ function openChartModal(code, name, price, rate, buyPrice, sellPrice, strategy) 
     const chartP = _loadChart(code, '1Y');
     const infoP  = fetchStockInfo(code).catch(() => null);
     Promise.all([chartP, infoP]).then(([, info]) => {
-        if (info) { _updateModalHeader(info); _renderInfoGrid(info); _renderSupply(info); }
+        if (info) {
+            _updateModalHeader(info);
+            // 가격 데이터 실패 시 폴백
+            if (info._priceErr && !(info.price > 0)) {
+                _renderInfoGridFallback(price);
+            } else {
+                _renderInfoGrid(info);
+            }
+            // 수급 데이터 실패 시 안내
+            if (info._invErr && !info.instNetAmt && !info.frnNetAmt && !info.indvNetAmt) {
+                document.getElementById('modal-supply-rows').innerHTML =
+                    '<div style="color:var(--sub);font-size:11px">수급 데이터를 가져올 수 없습니다<br><span style="font-size:10px;opacity:.6">(' + info._invErr + ')</span></div>';
+            } else {
+                _renderSupply(info);
+            }
+        }
         else { _renderInfoGridFallback(price); document.getElementById('modal-supply-rows').innerHTML = '<div style="color:var(--sub);font-size:11px">수급 데이터 없음</div>'; }
     });
 }
@@ -1643,8 +1658,15 @@ function _renderInfoGrid(info) {
         {label:'시총',val:mcStr},{label:'PER / PBR',val:(info.per>0?Number(info.per).toFixed(1)+'x':'-')+' / '+(info.pbr>0?Number(info.pbr).toFixed(1)+'x':'-')},
         {label:'52주 최고',val:h52>0?fmtNum(h52)+'원':'-',cls:'up'},{label:'52주 최저',val:l52>0?fmtNum(l52)+'원':'-',cls:'down'},
     ];
+    const dateNote = today !== '-'
+        ? '📅 기준일: ' + today + ' (마지막 영업일 · KIS inquire-price)'
+        : '📅 기준일 확인 불가 (KIS 응답 없음)';
+    const errNote = info._priceErr
+        ? '<div style="grid-column:span 4;font-size:10px;color:#ff6b6b;margin-bottom:4px">⚠ 일부 데이터 오류: ' + info._priceErr + '</div>'
+        : '';
     document.getElementById('modal-info-grid').innerHTML =
-        '<div style="grid-column:span 4;font-size:10px;color:var(--sub);margin-bottom:4px">📅 기준일: ' + today + ' (마지막 영업일 · KIS inquire-price)</div>' +
+        '<div style="grid-column:span 4;font-size:10px;color:var(--sub);margin-bottom:4px">' + dateNote + '</div>' +
+        errNote +
         items.map(it =>
             '<div class="info-item"><span class="info-label">'+it.label+'</span><span class="info-val'+(it.cls?' '+it.cls:'')+'">'+it.val+'</span></div>'
         ).join('');
@@ -1685,8 +1707,15 @@ function _renderSupply(info) {
         { label:'외국인', amt: info.frnNetAmt,  detail: '' },
         { label:'개인',   amt: info.indvNetAmt, detail: '' },
     ];
+    const supplyDateNote = today !== '-'
+        ? '📅 기준일: ' + today + ' (마지막 영업일 · KIS inquire-investor)'
+        : '📅 기준일 확인 불가';
+    const supplyErrNote = info._invErr
+        ? '<div style="font-size:10px;color:#ff6b6b;margin-bottom:4px">⚠ 수급 데이터 오류: ' + info._invErr + '</div>'
+        : '';
     document.getElementById('modal-supply-rows').innerHTML =
-        '<div style="font-size:10px;color:var(--sub);margin-bottom:8px">📅 기준일: ' + today + ' (마지막 영업일 · KIS inquire-investor)</div>' +
+        '<div style="font-size:10px;color:var(--sub);margin-bottom:8px">' + supplyDateNote + '</div>' +
+        supplyErrNote +
         rows.map(r =>
             '<div class="supply-row">' +
             '<span class="supply-label">' + r.label + '</span>' +
