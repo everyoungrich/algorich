@@ -1635,7 +1635,7 @@ function _renderInfoGrid(info) {
     let mcStr = '-';
     if (mcB>0) { const jo=Math.floor(mcB/10000),eok=mcB%10000; mcStr=jo>0?jo+'조'+(eok>0?' '+eok+'억':''):mcB+'억'; }
     const tvB = info.tradingValue>0?Math.floor(info.tradingValue/1e8):0;
-    const today = new Date().toLocaleDateString('ko-KR', {year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\. /g,'.').replace(/\.$/,'');
+    const today = info.dataDate || '-';   // KIS API가 반환한 실제 영업일 날짜
     const items = [
         {label:'전일종가',val:fmtNum(info.prevClose||0)+'원'},{label:'시가',val:fmtNum(info.open||0)+'원'},
         {label:'고가',val:fmtNum(info.high||0)+'원',cls:'up'},{label:'저가',val:fmtNum(info.low||0)+'원',cls:'down'},
@@ -1644,7 +1644,7 @@ function _renderInfoGrid(info) {
         {label:'52주 최고',val:h52>0?fmtNum(h52)+'원':'-',cls:'up'},{label:'52주 최저',val:l52>0?fmtNum(l52)+'원':'-',cls:'down'},
     ];
     document.getElementById('modal-info-grid').innerHTML =
-        '<div style="grid-column:span 4;font-size:10px;color:var(--sub);margin-bottom:4px">📅 기준일: ' + today + ' 장 종료 기준 (KIS 실시간)</div>' +
+        '<div style="grid-column:span 4;font-size:10px;color:var(--sub);margin-bottom:4px">📅 기준일: ' + today + ' (마지막 영업일 · KIS inquire-price)</div>' +
         items.map(it =>
             '<div class="info-item"><span class="info-label">'+it.label+'</span><span class="info-val'+(it.cls?' '+it.cls:'')+'">'+it.val+'</span></div>'
         ).join('');
@@ -1673,11 +1673,11 @@ function _renderSupply(info) {
         const eok = (val / 100).toFixed(1);
         return label + ' ' + (val > 0 ? '+' : '') + eok + '억';
     }
-    const today = new Date().toLocaleDateString('ko-KR', {year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\. /g,'.').replace(/\.$/,'');
+    const today = info.dataDate || '-';   // KIS API 실제 영업일 날짜
     const instDetail = [
-        detailAmt(info.fnncNetAmt||info.fnncNet, '금투'),
-        detailAmt(info.ivtrNetAmt||info.ivtrNet, '투신'),
-        detailAmt(info.prvtNetAmt||info.prvtNet, '사모'),
+        detailAmt(info.fnncNetAmt, '금투'),
+        detailAmt(info.ivtrNetAmt, '투신'),
+        detailAmt(info.prvtNetAmt, '사모'),
     ].filter(Boolean).join(' · ');
 
     const rows = [
@@ -1686,7 +1686,7 @@ function _renderSupply(info) {
         { label:'개인',   amt: info.indvNetAmt, detail: '' },
     ];
     document.getElementById('modal-supply-rows').innerHTML =
-        '<div style="font-size:10px;color:var(--sub);margin-bottom:8px">📅 기준일: ' + today + ' · 순매수 금액 기준</div>' +
+        '<div style="font-size:10px;color:var(--sub);margin-bottom:8px">📅 기준일: ' + today + ' (마지막 영업일 · KIS inquire-investor)</div>' +
         rows.map(r =>
             '<div class="supply-row">' +
             '<span class="supply-label">' + r.label + '</span>' +

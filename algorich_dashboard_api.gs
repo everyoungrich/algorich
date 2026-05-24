@@ -315,8 +315,16 @@ function getStockInfo(code) {
       muteHttpExceptions: true
     }
   );
-  // output 배열 첫 번째 = 당일 데이터
-  var inv = (JSON.parse(invRes.getContentText()).output || [])[0] || {};
+  // output 배열 첫 번째 = 당일(최근 영업일) 데이터
+  var invArr = JSON.parse(invRes.getContentText()).output || [];
+  var inv    = invArr[0] || {};
+
+  // 실제 데이터 기준일: inquire-investor output의 stck_bsop_date
+  // 예) 주말·공휴일 조회 시 → 마지막 영업일 날짜가 반환됨
+  var rawDate   = String(inv.stck_bsop_date || '');                        // YYYYMMDD
+  var dataDate  = rawDate.length === 8
+    ? rawDate.slice(0,4) + '.' + rawDate.slice(4,6) + '.' + rawDate.slice(6,8)
+    : '';   // 파싱 실패 시 빈 문자열 → 프론트에서 '-' 처리
 
   // prdy_vrss_sign: '1'상한 '2'상승 '3'보합 '4'하한 '5'하락
   var sign    = String(pd.prdy_vrss_sign || '3');
@@ -324,6 +332,9 @@ function getStockInfo(code) {
   var chgMult = isDown ? -1 : 1;
 
   return {
+    // ── 데이터 기준일 (실제 영업일) ──
+    dataDate: dataDate,   // "2026.05.22" 형태
+
     // ── 가격 ──
     price:        toNum(pd.stck_prpr),
     priceChange:  toNum(pd.prdy_vrss)  * chgMult,
@@ -349,18 +360,15 @@ function getStockInfo(code) {
     // ── 시장 구분 ──
     market: String(pd.rprs_mrkt_kor_name || ''),  // "코스피" / "코스닥"
 
-    // ── 투자자별 순매수 (수량 기준, 음수 = 순매도) ──
-    instNet:    toNum(inv.orgn_ntby_qty),          // 기관 합계
-    instNetAmt: toNum(inv.orgn_ntby_tr_pbmn),      // 기관 순매수대금 (백만원)
-    frnNet:     toNum(inv.frgn_ntby_qty),          // 외국인
-    frnNetAmt:  toNum(inv.frgn_ntby_tr_pbmn),
-    indvNet:    toNum(inv.prsn_ntby_qty),          // 개인
-    indvNetAmt: toNum(inv.prsn_ntby_tr_pbmn),
+    // ── 투자자별 순매수 (금액 기준, 백만원, 음수 = 순매도) ──
+    instNetAmt: toNum(inv.orgn_ntby_tr_pbmn),      // 기관 합계 순매수대금
+    frnNetAmt:  toNum(inv.frgn_ntby_tr_pbmn),      // 외국인
+    indvNetAmt: toNum(inv.prsn_ntby_tr_pbmn),      // 개인
 
-    // ── 기관 세부 ──
-    fnncNet:    toNum(inv.fnnc_invt_ntby_qty),     // 금융투자
-    ivtrNet:    toNum(inv.invt_trsf_ntby_qty),     // 투신
-    prvtNet:    toNum(inv.prmr_fund_ntby_qty),     // 사모
+    // ── 기관 세부 순매수대금 (백만원) ──
+    fnncNetAmt: toNum(inv.fnnc_invt_ntby_tr_pbmn), // 금융투자
+    ivtrNetAmt: toNum(inv.invt_trsf_ntby_tr_pbmn), // 투신
+    prvtNetAmt: toNum(inv.prmr_fund_ntby_tr_pbmn), // 사모
   };
 }
 
