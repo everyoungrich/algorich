@@ -73,15 +73,15 @@ class GoogleSheetsManager:
             return self.log_wb.worksheet(tab_name)
         except gspread.exceptions.WorksheetNotFound:
             worksheet = self.log_wb.add_worksheet(title=tab_name, rows=1000, cols=10)
-            worksheet.append_row(["날짜", "종목코드", "종목명", "종가", "상승률 (%)", "거래대금 (억)", "거래대금 순위", "비고"])
+            worksheet.append_row(["날짜", "종목코드", "종목명", "종가", "상승률 (%)", "거래대금 (억)", "거래대금 순위", "비고", "거래량비(%)"])
             return worksheet
 
-    def log_lead_stock(self, date_str, ticker, name, close_price, change_rate, amt_100m, rank, remark):
+    def log_lead_stock(self, date_str, ticker, name, close_price, change_rate, amt_100m, rank, remark, vol_ratio=0):
         if not self.initialized: return False
         log_key = (date_str, ticker)
         if log_key in self.logged_today: return False
-            
-        row = [date_str, ticker, name, int(close_price), float(change_rate), int(amt_100m), int(rank), remark]
+
+        row = [date_str, ticker, name, int(close_price), float(change_rate), int(amt_100m), int(rank), remark, round(float(vol_ratio), 1)]
         for attempt in range(3):
             try:
                 lead_sheet = self.get_log_sheet("0_주도주_Log")

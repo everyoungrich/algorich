@@ -87,7 +87,8 @@ function getLeadStocks() {
       changeRate: toNum(r[4]),
       amt:        toNum(r[5]),
       rank:       toNum(r[6]),
-      remark:     String(r[7] || '')
+      remark:     String(r[7] || ''),
+      volRatio:   toNum(r[8] || 0)   // 거래량비(%) — 구버전 행은 0 반환
     };
   });
 }

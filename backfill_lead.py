@@ -197,7 +197,8 @@ for target_date in target_dates:
             gs_manager.log_lead_stock(
                 log_date_str, code, name, int(curr_clpr),
                 round(price_rate, 2), amt_100m, rank,
-                f"S-Class 주도주 포착 (Naver백필 {target_date})"
+                f"S-Class 주도주 포착 (Naver백필 {target_date})",
+                vol_ratio=vol_inrt
             )
 
         found += 1
