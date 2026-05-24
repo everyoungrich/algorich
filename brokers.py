@@ -259,6 +259,23 @@ class KISBroker(BaseBroker):
             write_log(f"[에러] 52주 신고가 검증 중 차트 데이터 오류: {e}")
             return False
 
+    def get_inst_net_amount(self, code) -> float:
+        """당일 기관 합계 순매수대금(백만원). 실패 시 None 반환."""
+        token = self._get_real_token()
+        if not token:
+            return None
+        url = f"{self.REAL_BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-investor"
+        params = {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": code}
+        res = safe_request('GET', url, gs_manager=self.gs_manager,
+                           headers=self._real_headers("FHKST01010900"),
+                           params=params, timeout=10)
+        if res and res.status_code == 200:
+            data = res.json()
+            if data.get("rt_cd") == "0":
+                inv = (data.get("output") or [{}])[0]
+                return float(inv.get("orgn_ntby_tr_pbmn") or 0)
+        return None
+
     def scan_s_class_targets(self, target_date: str = None):
         """target_date: 'YYYYMMDD' (None이면 오늘). 과거 날짜 백필 가능."""
         if not self._get_real_token(): return []
@@ -299,7 +316,8 @@ class KISBroker(BaseBroker):
             price_rate = float(item.get("prdy_ctrt", 0))
 
             if price >= 1000 and vol_rate >= 300.0 and price_rate >= 10.0:
-                candidates.append({"code": code, "name": name, "price": price, "amt": amt})
+                candidates.append({"code": code, "name": name, "price": price, "amt": amt,
+                                   "vol_rate": vol_rate, "price_rate": price_rate})
 
         candidates.sort(key=lambda x: x["amt"], reverse=True)
         write_log(f"[필터 통과] vol>=300%+등락>=10%+1000원↑: {len(candidates)}종목 → 52주 신고가 검증 시작")
@@ -308,6 +326,8 @@ class KISBroker(BaseBroker):
         for rank, cand in enumerate(candidates, start=1):
             code = cand["code"]
             name = cand["name"]
+            vol_rate   = cand.get("vol_rate", 0)
+            price_rate = cand.get("price_rate", 0)
             daily_info = self.get_daily_prices(code, count=260, end_date=target_date)
             if len(daily_info) < 250: continue
 
@@ -323,180 +343,16 @@ class KISBroker(BaseBroker):
                 if self.gs_manager:
                     is_logged = self.gs_manager.log_lead_stock(
                         log_date_str, code, name, curr['clpr'],
-                        round(change_rate, 2), amt_100m, rank, "S-Class 주도주 포착"
+                        round(change_rate, 2), amt_100m, rank,
+                        "S-Class 주도주 포착",
+                        vol_ratio=vol_rate
                     )
                     if is_logged:
-                        write_log(f"[S-Class 확정] {name}({code}) - 시트 기록 완료.")
+                        write_log(f"[S-Class 확정] {name}({code}) 등락:{price_rate:.1f}% 거래량:{vol_rate:.0f}% - 시트 기�하 완료.")
                 s_class_list.append(cand)
 
             time.sleep(0.2)
 
-        write_log(f"S-Class 스캐닝 완료 ({log_date_str}): 총 {len(s_class_list)} 종목 발굴")
+        write_log(f"S-Class 주도주 스쿠딩 완료 ({log_date_str}): 총 {len(s_class_list)} 종목 발굴")
         return s_class_list
 
-
-    # ── Naver Finance 거래대금 순위 파싱 (historical용) ──────────────────
-
-    def _naver_top_by_amount(self, target_date: str, top_n: int = 40) -> list:
-        """Naver Finance 거래대금 순위 페이지에서 비ETF 상위 종목 반환 (KOSPI+KOSDAQ)"""
-        import re
-
-        ETF_KEYWORDS = [
-            "ETF", "ETN", "KODEX", "TIGER", "KBSTAR", "HANARO", "SOL",
-            "ACE", "ARIRANG", "KOSEF", "인버스", "레버리지", "스팩", "SPAC",
-        ]
-        all_items = []
-
-        for sosok in [0, 1]:
-            url = (f"https://finance.naver.com/sise/sise_quant.nhn"
-                   f"?sosok={sosok}&date={target_date}")
-            try:
-                r = requests.get(url, timeout=10, headers={
-                    "User-Agent": "Mozilla/5.0",
-                    "Referer": "https://finance.naver.com/",
-                })
-                if not r.ok:
-                    write_log(f"[Naver] sosok={sosok} 로드 실패: {r.status_code}")
-                    continue
-                text = r.content.decode("euc-kr", errors="replace")
-            except Exception as e:
-                write_log(f"[Naver] sosok={sosok} 요청 오류: {e}")
-                continue
-
-            for row in text.split('<td class="no">')[1:]:
-                code_m = re.search(r'code=(\d{6})', row)
-                name_m = re.search(r'class="tltle">([^<]+)</a>', row)
-                if not code_m or not name_m:
-                    continue
-                code = code_m.group(1)
-                name = name_m.group(1).strip()
-
-                if any(k in name for k in ETF_KEYWORDS):
-                    continue
-
-                # 순수 숫자 컬럼: 현재가(0) 거래량(1) 거래대금(2)
-                nums = re.findall(r'<td class="number">([0-9,]+)</td>', row)
-                rate_m = re.search(r'([-+]?[\d]+\.[\d]+)%', row)
-                if len(nums) < 3:
-                    continue
-                try:
-                    price  = int(nums[0].replace(",", ""))
-                    amount = int(nums[2].replace(",", ""))  # 거래대금 (백만원)
-                    rate   = float(rate_m.group(1)) if rate_m else 0.0
-                except (ValueError, IndexError):
-                    continue
-
-                if price < 1000:
-                    continue
-
-                all_items.append({
-                    "code": code, "name": name,
-                    "price": price, "rate": rate, "amount": amount,
-                })
-
-            time.sleep(0.3)
-
-        all_items.sort(key=lambda x: x["amount"], reverse=True)
-        return all_items[:top_n]
-
-    def scan_s_class_targets_historical(self, target_date: str) -> list:
-        """Naver Finance 거래대금 순위 + KIS 일봉으로 과거 날짜 S-Class 스캐닝"""
-        if not self._get_real_token():
-            return []
-
-        log_date_str = datetime.strptime(target_date, "%Y%m%d").strftime("%Y-%m-%d")
-        write_log(f"[@HistScanner] S-Class 과거 스캐닝 시작 (기준일: {log_date_str})")
-
-        # Step1: Naver 거래대금 상위 40개 비ETF 종목
-        top_stocks = self._naver_top_by_amount(target_date, top_n=40)
-        write_log(f"[Naver 거래대금 상위] 비ETF {len(top_stocks)}종목 확보")
-
-        s_class_list = []
-        for rank, stock in enumerate(top_stocks, start=1):
-            code   = stock["code"]
-            name   = stock["name"]
-            amount = stock["amount"]  # 백만원
-
-            # Step2: KIS 일봉 (기준일 포함 260일)
-            daily_info = self.get_daily_prices(code, count=260, end_date=target_date)
-            if len(daily_info) < 2:
-                continue
-
-            df = pd.DataFrame(daily_info)[::-1].reset_index(drop=True)
-            df[["clpr", "hgpr", "acml_vol"]] = (
-                df[["stck_clpr", "stck_hgpr", "acml_vol"]].apply(pd.to_numeric, errors="coerce")
-            )
-
-            curr = df.iloc[-1]
-            # 기준일 일봉이 target_date인지 확인 (공휴일/비거래일 방어)
-            if str(curr.get("stck_bsop_date", "")) != target_date:
-                continue
-
-            prev = df.iloc[-2]
-
-            # 조건 ① 거래량 전일비 300% 이상
-            curr_vol = float(curr["acml_vol"] or 0)
-            prev_vol = float(prev["acml_vol"] or 1)
-            vol_inrt = curr_vol / prev_vol * 100
-            if vol_inrt < 300.0:
-                continue
-
-            # 조건 ② 등락률 10% 이상
-            curr_clpr = float(curr["clpr"] or 0)
-            prev_clpr = float(prev["clpr"] or 1)
-            price_rate = (curr_clpr - prev_clpr) / prev_clpr * 100
-            if price_rate < 10.0:
-                continue
-
-            # 조건 ③ 52주 신고가 (250일 이상 필요)
-            if len(df) < 250:
-                continue
-            if not self.is_s_class_target(df):
-                continue
-
-            amt_100m = amount // 100  # 백만원 → 억원
-
-            if self.gs_manager:
-                is_logged = self.gs_manager.log_lead_stock(
-                    log_date_str, code, name, int(curr_clpr),
-                    round(price_rate, 2), amt_100m, rank,
-                    f"S-Class 주도주 포착 (Naver백필 {target_date})"
-                )
-                if is_logged:
-                    write_log(
-                        f"[S-Class 확정] {name}({code}) "
-                        f"vol={vol_inrt:.0f}%, 등락={price_rate:.1f}%, "
-                        f"거래대금={amt_100m}억"
-                    )
-
-            s_class_list.append(stock)
-            time.sleep(0.3)
-
-        write_log(f"[HistScanner] 완료 ({log_date_str}): {len(s_class_list)}종목 발굴")
-        return s_class_list
-
-
-class KiwoomAdapter(BaseBroker):
-    def __init__(self, gs_manager=None):
-        self.gs_manager = gs_manager
-        
-    def get_access_token(self):
-        # Kiwoom uses COM objects, not tokens usually
-        return "KIWOOM_LOGGED_IN"
-        
-    def place_order(self, code, qty, price=0, is_buy=True):
-        # KOA Studio 기반 SendOrder 실행 스켈레톤
-        write_log(f"[Kiwoom] {'매수' if is_buy else '매도'} 주문 스켈레톤: {code} {qty}주")
-        return True
-
-    def get_balance(self):
-        return 0, 0, []
-
-    def get_daily_prices(self, code, count=250):
-        return []
-
-    def check_market_crash(self):
-        return False
-
-    def scan_s_class_targets(self):
-        return []

@@ -53,12 +53,15 @@ class NHSniperStrategy(BaseStrategy):
                 df[dst] = pd.to_numeric(df[src], errors='coerce').fillna(0)
         return df
 
-    def check_buy_condition(self, code, daily_data):
+    def check_buy_condition(self, code, daily_data, inst_net_amt=None):
         """
-        NH-Sniper 매수 3조건:
-        1. 등락률 3% 이하
+        NH-Sniper 매수 조건 (AND 조건):
+        1. 등락률 3% 이하 (전일 급등 후 눌림)
         2. 거래량 전일비 50% 이하
         3. 현재가 > 5일 이동평균선
+
+        inst_net_amt: 기관 순매수대금(백만원). None이면 체크 생략.
+                      양수(기관 순매수) → OK, 음수 → 경고 로그만 (Hard 차단 아님)
         """
         if len(daily_data) < 10:
             return False, "FAIL: LACK_OF_DATA"
@@ -75,6 +78,7 @@ class NHSniperStrategy(BaseStrategy):
         if change_rate > 3.0:
             return False, f"FAIL: CHANGE_RATE_HIGH ({change_rate:.2f}%)"
 
+        vol_ratio = 0.0
         if prev['vol'] > 0:
             vol_ratio = curr['vol'] / prev['vol'] * 100
             if vol_ratio > 50.0:
@@ -84,21 +88,38 @@ class NHSniperStrategy(BaseStrategy):
         if curr['clpr'] <= ma5:
             return False, f"FAIL: BELOW_MA5 (현재:{curr['clpr']:,.0f} MA5:{ma5:,.0f})"
 
-        return True, f"OK (등락률:{change_rate:.2f}%, MA5:{ma5:,.0f}, 거래량비:{vol_ratio:.1f}%)" \
-            if prev['vol'] > 0 else f"OK (등락률:{change_rate:.2f}%, MA5:{ma5:,.0f})"
+        # 기관 순매수 — 소프트 우선순위 (Hard 차단 아님, 로그로만 표시)
+        inst_note = ""
+        if inst_net_amt is not None:
+            inst_eok = inst_net_amt / 100  # 백만원 → 억원
+            if inst_eok >= 0:
+                inst_note = f" 기관순매수:{inst_eok:.0f}억✅"
+            else:
+                inst_note = f" 기관순매도:{abs(inst_eok):.0f}억⚠"
+
+        return True, f"OK (등락률:{change_rate:.2f}% 거래량비:{vol_ratio:.1f}% MA5:{ma5:,.0f}{inst_note})"
 
     def check_ts_condition(self, code, daily_data):
-        """TS 조건: 현재 종가 < 5일 이동평균선"""
-        if len(daily_data) < 6:
-            return False, "FAIL: LACK_OF_DATA"
+        """
+        TS 조건 2단계:
+        - 1단계: 종가 < 5일선 → 잔여 50% 매도
+        - 2단계: 종가 < 20일선 → 전량 매도
+        반환: (signal, reason)
+          signal: None | 'half' | 'all'
+        """
+        if len(daily_data) < 21:
+            return None, "FAIL: LACK_OF_DATA"
 
         df = self._to_df(daily_data, {'stck_clpr': 'clpr'})
         curr_close = df['clpr'].iloc[-1]
-        ma5 = df['clpr'].tail(5).mean()
+        ma5  = df['clpr'].tail(5).mean()
+        ma20 = df['clpr'].tail(20).mean()
 
+        if curr_close < ma20:
+            return 'all', f"MA20 TS발동-전량 (종가:{curr_close:,.0f} < MA20:{ma20:,.0f})"
         if curr_close < ma5:
-            return True, f"TS발동 (종가:{curr_close:,.0f} < MA5:{ma5:,.0f})"
-        return False, f"MA5 위 유지 (종가:{curr_close:,.0f} >= MA5:{ma5:,.0f})"
+            return 'half', f"MA5 TS발동-50% (종가:{curr_close:,.0f} < MA5:{ma5:,.0f})"
+        return None, f"TS 없음 (MA5:{ma5:,.0f} MA20:{ma20:,.0f} 위 유지)"
 
     def run_entry_check(self):
         """15:15 — 기존 보유 TS 체크 + 신규 매수 후보 탐색"""
@@ -109,20 +130,29 @@ class NHSniperStrategy(BaseStrategy):
 
         holding_codes = {h["code"] for h in holdings}
 
-        # TS 체크: 5일선 이탈 종목 전량 매도
+        # TS 체크: MA5 이탈→50% / MA20 이탈→전량
         for h in holdings:
             code = h["code"]
             name = h["name"]
-            daily_data = self.broker.get_daily_prices(code, count=10)
-            ts_hit, ts_reason = self.check_ts_condition(code, daily_data)
+            daily_data = self.broker.get_daily_prices(code, count=25)
+            ts_signal, ts_reason = self.check_ts_condition(code, daily_data)
             write_log(f"[NH-Sniper TS체크] {name}({code}): {ts_reason}")
-            if ts_hit:
-                write_log(f"[NH-Sniper TS매도] {name}({code}) {h['qty']}주 전량 매도")
+            if ts_signal == 'all':
+                write_log(f"[NH-Sniper TS매도-전량] {name}({code}) MA20이탈 → {h['qty']}주 전량 매도")
                 if self.broker.place_order(code, h["qty"], is_buy=False):
                     if self.gs_manager:
                         self.gs_manager.log_sell(code, h["current_price"], h["qty"],
                                                  is_partial=False, strategy_type="NH_Sniper")
                     holding_codes.discard(code)
+            elif ts_signal == 'half' and code not in self.partial_sold_tracker:
+                sell_qty = math.floor(h["qty"] / 2)
+                if sell_qty > 0:
+                    write_log(f"[NH-Sniper TS매도-50%] {name}({code}) MA5이탈 → {sell_qty}주 매도")
+                    if self.broker.place_order(code, sell_qty, is_buy=False):
+                        if self.gs_manager:
+                            self.gs_manager.log_sell(code, h["current_price"], sell_qty,
+                                                     is_partial=True, strategy_type="NH_Sniper")
+                        self.partial_sold_tracker.add(code)
             time.sleep(0.3)
 
         # 매수 후보 탐색 — 소액 안전 사이징 (종목당 25%, 최대 3종목, 현금 25% 유지)
@@ -158,8 +188,16 @@ class NHSniperStrategy(BaseStrategy):
             if code in holding_codes or code in self.bought_today:
                 continue
 
-            daily_data = self.broker.get_daily_prices(code, count=10)
-            ok, reason = self.check_buy_condition(code, daily_data)
+            daily_data = self.broker.get_daily_prices(code, count=25)
+
+            # 기관 순매수대금 조회 (가능한 경우)
+            inst_net_amt = None
+            try:
+                inst_net_amt = self.broker.get_inst_net_amount(code)
+            except AttributeError:
+                pass  # 브로커가 미구현 시 체크 생략
+
+            ok, reason = self.check_buy_condition(code, daily_data, inst_net_amt=inst_net_amt)
             write_log(f"[NH-Sniper 매수체크] {name}({code}): {reason}")
 
             if ok and daily_data:
@@ -225,7 +263,8 @@ class NHSniperStrategy(BaseStrategy):
 
             profit_rt = (cur_price - buy_price) / buy_price * 100
 
-            if profit_rt >= 20.0 and code not in self.partial_sold_tracker:
+            # 익절: +25% → 50% 부분 매도 (1회)
+            if profit_rt >= 25.0 and code not in self.partial_sold_tracker:
                 sell_qty = math.floor(qty / 2)
                 if sell_qty > 0:
                     write_log(f"[NH-Sniper 익절] {name}({code}) +{profit_rt:.2f}% → {sell_qty}주 50% 매도")
@@ -235,6 +274,7 @@ class NHSniperStrategy(BaseStrategy):
                                                      is_partial=True, strategy_type="NH_Sniper")
                         self.partial_sold_tracker.add(code)
 
+            # 손절: -3% → 전량 매도
             elif profit_rt <= -3.0:
                 write_log(f"[NH-Sniper 손절] {name}({code}) {profit_rt:.2f}% → {qty}주 전량 매도")
                 if self.broker.place_order(code, qty, is_buy=False):
@@ -246,7 +286,7 @@ class NHSniperStrategy(BaseStrategy):
 
     def tick(self, now):
         # 자정 일일 초기화
-        if now.hour == 0 and now.minute == 0:
+        if now.hour == 0 and now.minute == 0 and now.second < 5:
             self.reset_daily_state()
 
         # 08:20 세션 초기화
@@ -264,21 +304,24 @@ class NHSniperStrategy(BaseStrategy):
         if in_intraday and now.second % 30 == 0:
             self.monitor_and_sell()
 
-        # 15:15 (1회) — 매수 후보 탐색 + TS 체크
-        if now.hour == 15 and now.minute == 15 and now.second == 0 and not self.has_executed_entry_check:
+        # 15:15~15:19 (1회) — 매수 후보 탐색 + TS 체크
+        # second == 0 조건 제거: 1초 루프에서 정각을 놓칠 경우 대비해 분 단위 체크
+        if now.hour == 15 and now.minute == 15 and not self.has_executed_entry_check:
+            write_log(f"[@NH-Sniper] 15:15 진입 체크 시작 ({now.strftime('%H:%M:%S')})")
             if not self.broker.check_market_crash():
                 self.run_entry_check()
             else:
                 write_log("[NH-Sniper] 코스피 급락 감지 — 당일 매수 중단")
             self.has_executed_entry_check = True
 
-        # 15:20 (1회) — 시장가 매수 실행
-        if now.hour == 15 and now.minute == 20 and now.second == 0 and not self.has_executed_entry_buy:
+        # 15:20~15:24 (1회) — 시장가 매수 실행
+        if now.hour == 15 and now.minute == 20 and not self.has_executed_entry_buy:
+            write_log(f"[@NH-Sniper] 15:20 시장가 매수 실행 ({now.strftime('%H:%M:%S')})")
             self.execute_buy()
             self.has_executed_entry_buy = True
 
-        # 15:30+ (1회) — S-Class 주도주 스캐닝
+        # 15:30+ (1회) — S-Class 주도주 스캐닝 (종가 확정 후)
         if ((now.hour == 15 and now.minute >= 30) or now.hour > 15) and not self.has_executed_s_class_scan:
-            write_log("[@NH-Sniper] 15:30 S-Class 주도주 스캐닝 시작")
+            write_log(f"[@NH-Sniper] 15:30 S-Class 주도주 스캐닝 시작 ({now.strftime('%H:%M:%S')})")
             self.broker.scan_s_class_targets()
             self.has_executed_s_class_scan = True
