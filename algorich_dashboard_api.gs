@@ -263,8 +263,9 @@ function getStockInfo(code) {
   var secret = p.getProperty('KIS_APP_SECRET');
   if (!appKey || !secret) throw new Error('Script Properties 미설정');
 
-  var token = _kisToken_(appKey, secret);
-  var base  = _kisBase_();
+  // 시세·수급은 항상 실전 서버 (모의 서버 미지원)
+  var base  = 'https://openapi.koreainvestment.com:9443';
+  var token = _kisToken_(appKey, secret, base);
 
   // ── 공통 헤더 베이스 ──────────────────────────────────
   var baseHdr = {
