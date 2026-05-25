@@ -331,12 +331,15 @@ class NHSniperStrategy(BaseStrategy):
             self.execute_buy()
             self.has_executed_entry_buy = True
 
-        # 15:30+ (1회) — S-Class 주도주 스캐닝 (종가 확정 후, 평일만)
+        # 15:30+ (1회) — S-Class 주도주 스캐닝 (종가 확정 후)
+        # 1차 방어: weekday >= 5 (토/일) 차단
+        # 2차 방어: brokers.py 내부에서 삼성전자 날짜 비교 → 평일 공휴일도 차단
         if ((now.hour == 15 and now.minute >= 30) or now.hour > 15) and not self.has_executed_s_class_scan:
-            if now.weekday() >= 5:  # 토(5), 일(6) 스캔 금지
+            if now.weekday() >= 5:  # 토(5), 일(6) — 주말 1차 차단
                 write_log(f"[@NH-Sniper] 주말 감지 — S-Class 스캔 건너뜀 ({now.strftime('%A')})")
-                self.has_executed_s_class_scan = True  # 오늘 재시도 방지
+                self.has_executed_s_class_scan = True
             else:
-                write_log(f"[@NH-Sniper] 15:30 S-Class 주도주 스캐닝 시작 ({now.strftime('%H:%M:%S')})")
+                # 평일 공휴일은 brokers.py 삼성전자 날짜 비교로 내부 차단됨
+                write_log(f"[@NH-Sniper] S-Class 주도주 스캐닝 시작 ({now.strftime('%H:%M:%S')})")
                 self.broker.scan_s_class_targets()
                 self.has_executed_s_class_scan = True

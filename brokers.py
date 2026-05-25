@@ -317,12 +317,14 @@ class KISBroker(BaseBroker):
         raw_list = (res.json().get("output", []) if res and res.status_code == 200 else [])[:30]
         write_log(f"[거래대금 상위 30위] API 수신: {len(raw_list)}종목")
 
-        # ── 공휴일 안전장치: KIS가 반환한 데이터가 오늘 날짜인지 확인 ──────────────
-        # 공휴일에 호출 시 KIS는 직전 영업일 데이터를 반환 → 날짜 불일치 시 스캔 중단
-        if raw_list and not target_date:
-            api_date = raw_list[0].get("stck_bsop_date", "") or raw_list[0].get("bsop_date", "")
-            if api_date and api_date != date_label:
-                write_log(f"[스캔 중단] 공휴일/장외 감지 — API 기준일({api_date}) ≠ 오늘({date_label}). 잘못된 데이터 기록 방지.")
+        # ── 공휴일 안전장치: 삼성전자 일봉 최신 날짜로 오늘 장 개장 여부 확인 ──────
+        # volume-rank API는 stck_bsop_date를 반환하지 않으므로
+        # inquire-daily-itemchartprice(005930)로 실제 영업일 여부를 판단
+        if not target_date:
+            ref_data = self.get_daily_prices("005930", count=1)
+            market_date = ref_data[0].get("stck_bsop_date", "") if ref_data else ""
+            if market_date and market_date != date_label:
+                write_log(f"[스캔 중단] 공휴일/휴장 감지 — 최근 영업일({market_date}) ≠ 오늘({date_label}). 잘못된 데이터 기록 방지.")
                 return []
 
         candidates = []
