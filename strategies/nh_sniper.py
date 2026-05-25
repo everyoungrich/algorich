@@ -56,14 +56,16 @@ class NHSniperStrategy(BaseStrategy):
     def check_buy_condition(self, code, daily_data, inst_net_amt=None):
         """
         NH-Sniper 매수 조건 (AND 조건):
+        ※ S-Class 스캔(등락률10%+·신고가)이 장대양봉을 보장하므로 별도 체크 불필요
         1. 등락률 3% 이하 (전일 급등 후 눌림)
-        2. 거래량 전일비 50% 이하
-        3. 현재가 > 5일 이동평균선
+        2. 거래량 전일비 50% 이하 (거래량 감소 음봉)
+        3. 정배열 확인 (MA5 > MA20) ← 역배열·첫번째 도달 실패 방지
+        4. 현재가 > 5일 이동평균선
 
         inst_net_amt: 기관 순매수대금(백만원). None이면 체크 생략.
                       양수(기관 순매수) → OK, 음수 → 경고 로그만 (Hard 차단 아님)
         """
-        if len(daily_data) < 10:
+        if len(daily_data) < 20:
             return False, "FAIL: LACK_OF_DATA"
 
         df = self._to_df(daily_data, {'stck_clpr': 'clpr', 'acml_vol': 'vol'})
@@ -71,20 +73,28 @@ class NHSniperStrategy(BaseStrategy):
         curr = df.iloc[-1]
         prev = df.iloc[-2]
 
-        if prev['clpr'] <= 0:
-            return False, "FAIL: PREV_CLOSE_ZERO"
+        if prev['clpr'] <= 0 or curr['clpr'] <= 0:
+            return False, "FAIL: PRICE_ZERO"
 
+        # [1] 등락률 3% 이하 (눌림)
         change_rate = (curr['clpr'] - prev['clpr']) / prev['clpr'] * 100
         if change_rate > 3.0:
             return False, f"FAIL: CHANGE_RATE_HIGH ({change_rate:.2f}%)"
 
+        # [2] 거래량 전일비 50% 이하
         vol_ratio = 0.0
         if prev['vol'] > 0:
             vol_ratio = curr['vol'] / prev['vol'] * 100
             if vol_ratio > 50.0:
                 return False, f"FAIL: VOLUME_HIGH ({vol_ratio:.1f}%)"
 
-        ma5 = df['clpr'].tail(5).mean()
+        # [3] 정배열 확인 (MA5 > MA20) — 역배열이면 돌파 실패 확률 높음
+        ma5  = df['clpr'].tail(5).mean()
+        ma20 = df['clpr'].tail(20).mean()
+        if ma5 <= ma20:
+            return False, f"FAIL: NOT_ALIGNED (MA5:{ma5:,.0f} ≤ MA20:{ma20:,.0f})"
+
+        # [4] 현재가 MA5 위 (눌림 후 지지)
         if curr['clpr'] <= ma5:
             return False, f"FAIL: BELOW_MA5 (현재:{curr['clpr']:,.0f} MA5:{ma5:,.0f})"
 
@@ -97,7 +107,7 @@ class NHSniperStrategy(BaseStrategy):
             else:
                 inst_note = f" 기관순매도:{abs(inst_eok):.0f}억⚠"
 
-        return True, f"OK (등락률:{change_rate:.2f}% 거래량비:{vol_ratio:.1f}% MA5:{ma5:,.0f}{inst_note})"
+        return True, f"OK (등락:{change_rate:.2f}% 거래량비:{vol_ratio:.1f}% MA5:{ma5:,.0f} MA20:{ma20:,.0f}{inst_note})"
 
     def check_ts_condition(self, code, daily_data):
         """
