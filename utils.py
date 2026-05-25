@@ -143,7 +143,7 @@ class GoogleSheetsManager:
             target_sheet = self.get_main_sheet(strategy_type)
             target_sheet.append_row(row, value_input_option='USER_ENTERED')
         except Exception as e:
-            pass
+            write_log(f"[log_buy 실패] {code} {strategy_type}: {repr(e)}")
 
     def log_error(self, message):
         if not self.initialized: return
@@ -153,8 +153,8 @@ class GoogleSheetsManager:
         try:
             target_sheet = self.get_main_sheet("1D_RB")
             target_sheet.append_row(row, value_input_option='USER_ENTERED')
-        except:
-            pass
+        except Exception as e:
+            write_log(f"[log_error 시트기록 실패] {repr(e)}")
 
     def log_sell(self, code, sell_price, sell_qty, is_partial=False, strategy_type="1D_RB"):
         if not self.initialized: return
@@ -199,7 +199,7 @@ class GoogleSheetsManager:
                         target_sheet.update(f"B{row_index}", [["완료"]], value_input_option='USER_ENTERED')
                     break
         except Exception as e:
-            pass
+            write_log(f"[log_sell 실패] {code} {strategy_type}: {repr(e)}")
 
 def safe_request(method, url, gs_manager=None, **kwargs):
     for attempt in range(3):
