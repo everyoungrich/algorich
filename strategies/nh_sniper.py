@@ -331,8 +331,12 @@ class NHSniperStrategy(BaseStrategy):
             self.execute_buy()
             self.has_executed_entry_buy = True
 
-        # 15:30+ (1회) — S-Class 주도주 스캐닝 (종가 확정 후)
+        # 15:30+ (1회) — S-Class 주도주 스캐닝 (종가 확정 후, 평일만)
         if ((now.hour == 15 and now.minute >= 30) or now.hour > 15) and not self.has_executed_s_class_scan:
-            write_log(f"[@NH-Sniper] 15:30 S-Class 주도주 스캐닝 시작 ({now.strftime('%H:%M:%S')})")
-            self.broker.scan_s_class_targets()
-            self.has_executed_s_class_scan = True
+            if now.weekday() >= 5:  # 토(5), 일(6) 스캔 금지
+                write_log(f"[@NH-Sniper] 주말 감지 — S-Class 스캔 건너뜀 ({now.strftime('%A')})")
+                self.has_executed_s_class_scan = True  # 오늘 재시도 방지
+            else:
+                write_log(f"[@NH-Sniper] 15:30 S-Class 주도주 스캐닝 시작 ({now.strftime('%H:%M:%S')})")
+                self.broker.scan_s_class_targets()
+                self.has_executed_s_class_scan = True

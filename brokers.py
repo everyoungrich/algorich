@@ -317,8 +317,16 @@ class KISBroker(BaseBroker):
         raw_list = (res.json().get("output", []) if res and res.status_code == 200 else [])[:30]
         write_log(f"[거래대금 상위 30위] API 수신: {len(raw_list)}종목")
 
+        # ── 공휴일 안전장치: KIS가 반환한 데이터가 오늘 날짜인지 확인 ──────────────
+        # 공휴일에 호출 시 KIS는 직전 영업일 데이터를 반환 → 날짜 불일치 시 스캔 중단
+        if raw_list and not target_date:
+            api_date = raw_list[0].get("stck_bsop_date", "") or raw_list[0].get("bsop_date", "")
+            if api_date and api_date != date_label:
+                write_log(f"[스캔 중단] 공휴일/장외 감지 — API 기준일({api_date}) ≠ 오늘({date_label}). 잘못된 데이터 기록 방지.")
+                return []
+
         candidates = []
-        for item in raw_list:
+        for mkt_rank, item in enumerate(raw_list, start=1):  # mkt_rank = 거래대금 상위 30위 내 실제 순위
             code = item.get("mksc_shrn_iscd", "")
             name = item.get("hts_kor_isnm", "")
             price = float(item.get("stck_prpr", 0))
@@ -334,17 +342,19 @@ class KISBroker(BaseBroker):
 
             if price >= 1000 and vol_rate >= 300.0 and price_rate >= 10.0:
                 candidates.append({"code": code, "name": name, "price": price, "amt": amt,
-                                   "vol_rate": vol_rate, "price_rate": price_rate})
+                                   "vol_rate": vol_rate, "price_rate": price_rate,
+                                   "mkt_rank": mkt_rank})  # 실제 거래대금 시장 순위 보존
 
         candidates.sort(key=lambda x: x["amt"], reverse=True)
         write_log(f"[필터 통과] vol>=300%+등락>=10%+1000원↑: {len(candidates)}종목 → 52주 신고가 검증 시작")
 
         s_class_list = []
-        for rank, cand in enumerate(candidates, start=1):
+        for cand in candidates:
             code = cand["code"]
             name = cand["name"]
             vol_rate   = cand.get("vol_rate", 0)
             price_rate = cand.get("price_rate", 0)
+            mkt_rank   = cand.get("mkt_rank", 0)  # 거래대금 상위 30위 내 실제 순위
             daily_info = self.get_daily_prices(code, count=260, end_date=target_date)
             if len(daily_info) < 250: continue
 
@@ -360,12 +370,12 @@ class KISBroker(BaseBroker):
                 if self.gs_manager:
                     is_logged = self.gs_manager.log_lead_stock(
                         log_date_str, code, name, curr['clpr'],
-                        round(change_rate, 2), amt_100m, rank,
+                        round(change_rate, 2), amt_100m, mkt_rank,  # 실제 거래대금 시장 순위 기록
                         "S-Class 주도주 포착",
                         vol_ratio=vol_rate
                     )
                     if is_logged:
-                        write_log(f"[S-Class 확정] {name}({code}) 등락:{price_rate:.1f}% 거래량:{vol_rate:.0f}% - 시트 기하 완료.")
+                        write_log(f"[S-Class 확정] {name}({code}) 거래대금순위:{mkt_rank}위 등락:{price_rate:.1f}% 거래량:{vol_rate:.0f}% - 시트 기록 완료.")
                 s_class_list.append(cand)
 
             time.sleep(0.2)
