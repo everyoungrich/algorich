@@ -341,59 +341,53 @@ function getStockInfo(code) {
     'custtype':      'P'
   };
 
-  // ── [1] 현재가 — 실패해도 빈 객체로 진행 ──────────────
-  var pd = {};
-  var priceErr = '';
+  // ── fetchAll로 두 API 병렬 호출 (순차→병렬, ~50% 응답시간 단축) ──
+  var requests = [
+    {
+      url:    base + '/uapi/domestic-stock/v1/quotations/inquire-price'
+                   + '?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=' + code,
+      method: 'get',
+      headers: _mergeHdr_(baseHdr, 'FHKST01010100'),
+      muteHttpExceptions: true
+    },
+    {
+      url:    base + '/uapi/domestic-stock/v1/quotations/inquire-investor'
+                   + '?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=' + code,
+      method: 'get',
+      headers: _mergeHdr_(baseHdr, 'FHKST01010900'),
+      muteHttpExceptions: true
+    }
+  ];
+
+  var responses = UrlFetchApp.fetchAll(requests);
+
+  // ── [1] 현재가 파싱 ───────────────────────────────────
+  var pd = {}, priceErr = '';
   try {
-    var priceRes = UrlFetchApp.fetch(
-      base + '/uapi/domestic-stock/v1/quotations/inquire-price'
-        + '?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=' + code,
-      {
-        method: 'get',
-        headers: _mergeHdr_(baseHdr, 'FHKST01010100'),
-        muteHttpExceptions: true
-      }
-    );
-    var priceJson = JSON.parse(priceRes.getContentText());
+    var priceJson = JSON.parse(responses[0].getContentText());
     if (priceJson.rt_cd === '0' && priceJson.output) {
       pd = priceJson.output;
     } else {
       priceErr = 'rt_cd=' + (priceJson.rt_cd || '?') + ' msg=' + (priceJson.msg1 || '');
     }
-  } catch(e) {
-    priceErr = String(e.message || e);
-  }
+  } catch(e) { priceErr = String(e.message || e); }
 
-  // ── [2] 투자자별 순매수 — 실패해도 빈 객체로 진행 ──────
-  var inv = {};
-  var invErr = '';
-  var dataDate = '';
+  // ── [2] 투자자별 순매수 파싱 ─────────────────────────
+  var inv = {}, invErr = '', dataDate = '';
   try {
-    var invRes = UrlFetchApp.fetch(
-      base + '/uapi/domestic-stock/v1/quotations/inquire-investor'
-        + '?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=' + code,
-      {
-        method: 'get',
-        headers: _mergeHdr_(baseHdr, 'FHKST01010900'),
-        muteHttpExceptions: true
-      }
-    );
-    var invJson = JSON.parse(invRes.getContentText());
+    var invJson = JSON.parse(responses[1].getContentText());
     if (invJson.rt_cd === '0' && invJson.output && invJson.output.length > 0) {
       inv = invJson.output[0];
-      // 실제 데이터 기준일: 마지막 영업일 날짜
-      var rawDate = String(inv.stck_bsop_date || '');  // YYYYMMDD
+      var rawDate = String(inv.stck_bsop_date || '');
       dataDate = rawDate.length === 8
         ? rawDate.slice(0,4) + '.' + rawDate.slice(4,6) + '.' + rawDate.slice(6,8)
         : '';
     } else {
       invErr = 'rt_cd=' + (invJson.rt_cd || '?') + ' msg=' + (invJson.msg1 || '');
     }
-  } catch(e) {
-    invErr = String(e.message || e);
-  }
+  } catch(e) { invErr = String(e.message || e); }
 
-  // dataDate를 inquire-price에서도 보완 (inquire-investor 실패 시)
+  // inquire-investor 실패 시 inquire-price 날짜로 보완
   if (!dataDate) {
     var rawPriceDate = String(pd.stck_bsop_date || '');
     if (rawPriceDate.length === 8) {
@@ -401,19 +395,29 @@ function getStockInfo(code) {
     }
   }
 
-  // prdy_vrss_sign: '1'상한 '2'상승 '3'보합 '4'하한 '5'하락
+  // ── 부호 처리 (prdy_vrss_sign: 1상한 2상승 3보합 4하한 5하락) ──
   var sign    = String(pd.prdy_vrss_sign || '3');
   var isDown  = (sign === '4' || sign === '5');
   var chgMult = isDown ? -1 : 1;
 
+  // ── 관리종목·투자경고 코드 파싱 ──────────────────────
+  // mrkt_warn_cls_code: '00'정상 '01'투자주의 '02'투자경고 '03'투자위험
+  //                     '04'투자위험예고 '05'단기과열 '06'단기과열지정예고
+  var warnCode  = String(pd.mrkt_warn_cls_code || '00');
+  var warnLabel = { '00':'', '01':'투자주의', '02':'투자경고',
+                    '03':'투자위험', '04':'투자위험예고',
+                    '05':'단기과열', '06':'단기과열예고' }[warnCode] || '';
+  // 관리종목 여부: mang_issu_cls_code '0'일반 '1'관리
+  var isMgmt = String(pd.mang_issu_cls_code || '0') !== '0';
+
   return {
-    // ── 데이터 기준일 (실제 영업일) ──
-    dataDate: dataDate,   // "2026.05.22" 형태
+    // ── 데이터 기준일 ──
+    dataDate: dataDate,           // "2026.05.23"
 
     // ── 가격 ──
     price:        toNum(pd.stck_prpr),
-    priceChange:  toNum(pd.prdy_vrss)  * chgMult,
-    changeRate:   toNum(pd.prdy_ctrt)  * chgMult,
+    priceChange:  toNum(pd.prdy_vrss)     * chgMult,
+    changeRate:   toNum(pd.prdy_ctrt)     * chgMult,
     prevClose:    toNum(pd.stck_prdy_clpr),
     open:         toNum(pd.stck_oprc),
     high:         toNum(pd.stck_hgpr),
@@ -421,31 +425,40 @@ function getStockInfo(code) {
 
     // ── 거래량/대금 ──
     volume:       toNum(pd.acml_vol),
-    tradingValue: toNum(pd.acml_tr_pbmn),   // 원 단위
+    tradingValue: toNum(pd.acml_tr_pbmn), // 원 단위
 
     // ── 52주 ──
     high52w:      toNum(pd.w52_hgpr),
     low52w:       toNum(pd.w52_lwpr),
 
     // ── 밸류에이션 ──
-    marketCapB:   toNum(pd.hts_avls),   // 억원 단위
+    marketCapB:   toNum(pd.hts_avls),     // 억원
     per:          toNum(pd.per),
     pbr:          toNum(pd.pbr),
+    eps:          toNum(pd.eps),          // 주당순이익
+    bps:          toNum(pd.bps),          // 주당순자산
 
-    // ── 시장 구분 ──
-    market: String(pd.rprs_mrkt_kor_name || ''),  // "코스피" / "코스닥"
+    // ── 시장 구분 + 경고 ──
+    market:    String(pd.rprs_mrkt_kor_name || ''),
+    warnCode:  warnCode,   // '00'~'06'
+    warnLabel: warnLabel,  // 'e.g. "투자주의"'
+    isMgmt:    isMgmt,     // true = 관리종목
 
-    // ── 투자자별 순매수 (금액 기준, 백만원, 음수 = 순매도) ──
-    instNetAmt: toNum(inv.orgn_ntby_tr_pbmn),      // 기관 합계 순매수대금
-    frnNetAmt:  toNum(inv.frgn_ntby_tr_pbmn),      // 외국인
-    indvNetAmt: toNum(inv.prsn_ntby_tr_pbmn),      // 개인
+    // ── 투자자별 순매수 (백만원, 음수=순매도) ──
+    instNetAmt: toNum(inv.orgn_ntby_tr_pbmn),       // 기관 합계
+    frnNetAmt:  toNum(inv.frgn_ntby_tr_pbmn),       // 외국인
+    indvNetAmt: toNum(inv.prsn_ntby_tr_pbmn),       // 개인
 
-    // ── 기관 세부 순매수대금 (백만원) ──
-    fnncNetAmt: toNum(inv.fnnc_invt_ntby_tr_pbmn), // 금융투자
-    ivtrNetAmt: toNum(inv.invt_trsf_ntby_tr_pbmn), // 투신
-    prvtNetAmt: toNum(inv.prmr_fund_ntby_tr_pbmn), // 사모
+    // ── 기관 세부 (백만원) ──
+    fnncNetAmt:  toNum(inv.fnnc_invt_ntby_tr_pbmn), // 금융투자
+    ivtrNetAmt:  toNum(inv.invt_trsf_ntby_tr_pbmn), // 투신
+    prvtNetAmt:  toNum(inv.prmr_fund_ntby_tr_pbmn), // 사모
+    insrcNetAmt: toNum(inv.insrnc_ntby_tr_pbmn),    // 보험
+    bankNetAmt:  toNum(inv.bank_ntby_tr_pbmn),      // 은행
+    bsnsNetAmt:  toNum(inv.bsns_invt_ntby_tr_pbmn), // 사업법인
+    etcNetAmt:   toNum(inv.etc_corpt_ntby_tr_pbmn), // 기타법인
 
-    // ── 디버그 (빈 문자열이면 정상) ──
+    // ── 디버그 ──
     _priceErr: priceErr,
     _invErr:   invErr,
   };

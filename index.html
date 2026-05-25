@@ -661,6 +661,7 @@
                         <span id="modal-code" class="modal-code">-</span>
                         <span id="badge-52h-hdr"></span>
                         <span id="modal-strat-badge"></span>
+                        <span id="modal-warn-badge"></span>
                     </div>
                 </div>
                 <button id="chart-close" onclick="closeChart()">×</button>
@@ -1469,8 +1470,48 @@ async function fetchChart(code, tab) {
     const { timeframe, count } = TAB_CONFIG[tab] || TAB_CONFIG['1Y'];
     const tfMap = { day:'day', week:'week', month:'month' };
     const pdMap = { day:'D', week:'W', month:'M' };
+    const ssKey = 'chart_' + code + '_' + tab;
 
-    // ① Naver Finance 직접 호출 (GAS 우회 → ~10배 빠름)
+    // ── sessionStorage 캐시 (탭 전환·재오픈 즉시 렌더) ────────────────
+    try {
+        const hit = sessionStorage.getItem(ssKey);
+        if (hit) {
+            const parsed = JSON.parse(hit);
+            if (parsed && parsed.length) return parsed;
+        }
+    } catch(_) {}
+
+    // ── ① Naver Finance JSON API (CORS 안정, XML보다 빠름) ────────────
+    try {
+        const now   = new Date();
+        const toStr = now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + '235959';
+        const frDate = new Date(now); frDate.setFullYear(frDate.getFullYear() - 2);
+        const frStr = frDate.getFullYear() + String(frDate.getMonth()+1).padStart(2,'0') + String(frDate.getDate()).padStart(2,'0') + '000000';
+        const tf = timeframe === 'week' ? 'week' : timeframe === 'month' ? 'month' : 'day';
+        const naverJsonUrl = 'https://api.stock.naver.com/chart/domestic/item/'
+            + encodeURIComponent(code) + '/' + tf
+            + '?startDateTime=' + frStr + '&endDateTime=' + toStr;
+        const res = await fetch(naverJsonUrl);
+        if (res.ok) {
+            const arr = await res.json();  // [{localDate,openPrice,highPrice,lowPrice,closePrice,accumulatedTradingVolume}]
+            if (Array.isArray(arr) && arr.length) {
+                const rows = arr.slice(-count).map(d => ({
+                    date:   String(d.localDate),
+                    open:   d.openPrice  || 0,
+                    high:   d.highPrice  || 0,
+                    low:    d.lowPrice   || 0,
+                    close:  d.closePrice || 0,
+                    volume: d.accumulatedTradingVolume || 0
+                })).filter(d => d.date && d.close);
+                if (rows.length) {
+                    try { sessionStorage.setItem(ssKey, JSON.stringify(rows)); } catch(_) {}
+                    return rows;
+                }
+            }
+        }
+    } catch(_) { /* JSON API 실패 → XML 시도 */ }
+
+    // ── ② Naver Finance XML API (구 방식, 폴백) ────────────────────────
     try {
         const naverUrl = 'https://fchart.stock.naver.com/sise.nhn'
             + '?symbol=' + encodeURIComponent(code)
@@ -1487,25 +1528,41 @@ async function fetchChart(code, tab) {
                 if (!p[0] || !close) continue;
                 rows.push({ date:p[0], open:Number(p[1]), high:Number(p[2]), low:Number(p[3]), close, volume:Number(p[5]) });
             }
-            if (rows.length) return rows;
+            if (rows.length) {
+                try { sessionStorage.setItem(ssKey, JSON.stringify(rows)); } catch(_) {}
+                return rows;
+            }
         }
     } catch(_) { /* CORS 차단 시 GAS로 폴백 */ }
 
-    // ② GAS 폴백
+    // ── ③ GAS 폴백 (최후 수단) ────────────────────────────────────────
     const url = API_URL + '?type=chart&code=' + encodeURIComponent(code)
         + '&period=' + count + '&period_div=' + (pdMap[timeframe]||'D');
     const res = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     if (json.status !== 'ok') throw new Error(json.error || '차트 API 오류');
-    return json.chart || [];
+    const rows = json.chart || [];
+    try { sessionStorage.setItem(ssKey, JSON.stringify(rows)); } catch(_) {}
+    return rows;
 }
 async function fetchStockInfo(code) {
+    // sessionStorage 캐시 (당일 기준, 5분 TTL)
+    const ssKey = 'info_' + code;
+    try {
+        const hit = sessionStorage.getItem(ssKey);
+        if (hit) {
+            const { ts, data } = JSON.parse(hit);
+            if (Date.now() - ts < 5 * 60 * 1000) return data;  // 5분 이내 캐시 재사용
+        }
+    } catch(_) {}
     const res = await fetch(API_URL + '?type=stockinfo&code=' + encodeURIComponent(code));
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     if (json.status !== 'ok') throw new Error(json.error || 'stockinfo 오류');
-    return json.stockInfo || {};
+    const data = json.stockInfo || {};
+    try { sessionStorage.setItem(ssKey, JSON.stringify({ ts: Date.now(), data })); } catch(_) {}
+    return data;
 }
 function dateToTime(s) { return s && s.length >= 8 ? s.slice(0,4) + '-' + s.slice(4,6) + '-' + s.slice(6,8) : ''; }
 function calcMA(candles, period) {
@@ -1647,6 +1704,14 @@ function _updateModalHeader(info) {
     document.getElementById('modal-price').textContent = price>0 ? fmtNum(price)+'원' : '-';
     document.getElementById('modal-change').innerHTML  = '<span class="'+cls+'">'+sign+Number(rate).toFixed(2)+'%</span>' +
         (chg ? '<span style="color:var(--sub);font-size:14px;margin-left:8px;">'+(chg>0?'+':'')+fmtNum(chg)+'원</span>' : '');
+    // 관리종목·투자경고 배지
+    const warnEl = document.getElementById('modal-warn-badge');
+    if (warnEl) {
+        let badge = '';
+        if (info.isMgmt)          badge += '<span style="background:rgba(255,77,77,.18);color:#ff4d4d;border:1px solid rgba(255,77,77,.4);border-radius:4px;font-size:10px;padding:2px 6px;font-weight:700;margin-right:4px">관리종목</span>';
+        if (info.warnLabel)       badge += '<span style="background:rgba(255,140,0,.15);color:#f0a500;border:1px solid rgba(255,140,0,.4);border-radius:4px;font-size:10px;padding:2px 6px;margin-right:4px">⚠ '+info.warnLabel+'</span>';
+        warnEl.innerHTML = badge;
+    }
 }
 function _renderInfoGrid(info) {
     const highs = _currentCnds.map(d=>d.high).filter(v=>v>0);
@@ -1656,13 +1721,29 @@ function _renderInfoGrid(info) {
     let mcStr = '-';
     if (mcB>0) { const jo=Math.floor(mcB/10000),eok=mcB%10000; mcStr=jo>0?jo+'조'+(eok>0?' '+eok+'억':''):mcB+'억'; }
     const tvB = info.tradingValue>0?Math.floor(info.tradingValue/1e8):0;
-    const today = info.dataDate || '-';   // KIS API가 반환한 실제 영업일 날짜
+    const today = info.dataDate || '-';
+
+    // PER·PBR: 0이면 "N/A" (적자·신규상장), 양수면 소수 1자리
+    const perStr = info.per > 0  ? Number(info.per).toFixed(1) + 'x'
+                 : info.per < 0  ? 'N/A (적자)'
+                 : 'N/A';
+    const pbrStr = info.pbr > 0  ? Number(info.pbr).toFixed(1) + 'x' : 'N/A';
+    const epsStr = info.eps && info.eps !== 0 ? fmtNum(Math.round(info.eps)) + '원' : '-';
+    const bpsStr = info.bps && info.bps >  0 ? fmtNum(Math.round(info.bps)) + '원' : '-';
+
     const items = [
-        {label:'전일종가',val:fmtNum(info.prevClose||0)+'원'},{label:'시가',val:fmtNum(info.open||0)+'원'},
-        {label:'고가',val:fmtNum(info.high||0)+'원',cls:'up'},{label:'저가',val:fmtNum(info.low||0)+'원',cls:'down'},
-        {label:'거래량',val:info.volume>0?fmtNum(info.volume)+'주':'-'},{label:'거래대금',val:tvB>0?fmtAmt(tvB):'-'},
-        {label:'시총',val:mcStr},{label:'PER / PBR',val:(info.per>0?Number(info.per).toFixed(1)+'x':'-')+' / '+(info.pbr>0?Number(info.pbr).toFixed(1)+'x':'-')},
-        {label:'52주 최고',val:h52>0?fmtNum(h52)+'원':'-',cls:'up'},{label:'52주 최저',val:l52>0?fmtNum(l52)+'원':'-',cls:'down'},
+        {label:'전일종가', val:fmtNum(info.prevClose||0)+'원'},
+        {label:'시가',     val:fmtNum(info.open||0)+'원'},
+        {label:'고가',     val:fmtNum(info.high||0)+'원',   cls:'up'},
+        {label:'저가',     val:fmtNum(info.low||0)+'원',    cls:'down'},
+        {label:'거래량',   val:info.volume>0 ? fmtNum(info.volume)+'주' : '-'},
+        {label:'거래대금', val:tvB>0 ? fmtAmt(tvB) : '-'},
+        {label:'시총',     val:mcStr},
+        {label:'PER / PBR',val: perStr + ' / ' + pbrStr},
+        {label:'EPS / BPS',val: epsStr + ' / ' + bpsStr},
+        {label:'52주 최고',val:h52>0 ? fmtNum(h52)+'원' : '-', cls:'up'},
+        {label:'52주 최저',val:l52>0 ? fmtNum(l52)+'원' : '-', cls:'down'},
+        {label:'시장',     val: (info.market||'-') + (info.isMgmt?' <span style="color:#ff4d4d;font-size:10px">[관리]</span>':'' )},
     ];
     const dateNote = today !== '-'
         ? '📅 기준일: ' + today + ' (마지막 영업일 · KIS inquire-price)'
@@ -1683,53 +1764,67 @@ function _renderInfoGridFallback(price) {
         '<div class="info-item" style="grid-column:span 3"><span class="info-label" style="color:var(--sub)">실시간 데이터를 가져올 수 없습니다</span></div>';
 }
 function _renderSupply(info) {
-    // amt: 백만원 단위 → 억원 표시
-    function fmtAmt_(manwon) {
+    // 백만원 → 억원 표시 (부호·색상 포함)
+    function fmtAmt_(manwon, small) {
         if (manwon === null || manwon === undefined || manwon === '') return '<span style="color:var(--sub)">-</span>';
         const v = Number(manwon);
+        if (v === 0) return '<span style="color:var(--sub)">0</span>';
         const sign = v >= 0 ? '+' : '';
-        const cls  = v > 0 ? 'up' : v < 0 ? 'down' : '';
-        const eok  = v / 100;  // 백만원 → 억원
+        const cls  = v > 0 ? 'up' : 'down';
+        const eok  = v / 100;
         const disp = Math.abs(eok) >= 1
             ? sign + eok.toFixed(1) + '억'
             : sign + v.toFixed(0) + '백만';
-        return '<span class="supply-val ' + cls + '">' + disp + '</span>';
+        const sz = small ? 'font-size:11px;' : '';
+        return '<span class="supply-val ' + cls + '" style="' + sz + '">' + disp + '</span>';
     }
-    // 기관 세부 (금투/투신/사모) — 억원 단위
-    function detailAmt(val, label) {
+    // 세부 항목 한 줄 (값 0이면 숨김)
+    function subRow(label, val) {
         if (!val) return '';
-        const eok = (val / 100).toFixed(1);
-        return label + ' ' + (val > 0 ? '+' : '') + eok + '억';
+        const sign = val > 0 ? '+' : '';
+        const eok  = (val / 100);
+        const disp = Math.abs(eok) >= 1 ? sign + eok.toFixed(1) + '억' : sign + val.toFixed(0) + '백만';
+        const cls  = val > 0 ? 'color:#00ffa3' : 'color:#ff4d4d';
+        return '<div style="display:flex;justify-content:space-between;padding:3px 0 3px 14px;font-size:11px;border-top:1px solid rgba(255,255,255,.04)">'
+            + '<span style="color:var(--sub)">' + label + '</span>'
+            + '<span style="' + cls + ';font-weight:600">' + disp + '</span></div>';
     }
-    const today = info.dataDate || '-';   // KIS API 실제 영업일 날짜
-    const instDetail = [
-        detailAmt(info.fnncNetAmt, '금투'),
-        detailAmt(info.ivtrNetAmt, '투신'),
-        detailAmt(info.prvtNetAmt, '사모'),
-    ].filter(Boolean).join(' · ');
 
-    const rows = [
-        { label:'기관',   amt: info.instNetAmt, detail: instDetail },
-        { label:'외국인', amt: info.frnNetAmt,  detail: '' },
-        { label:'개인',   amt: info.indvNetAmt, detail: '' },
-    ];
+    const today = info.dataDate || '-';
     const supplyDateNote = today !== '-'
         ? '📅 기준일: ' + today + ' (마지막 영업일 · KIS inquire-investor)'
         : '📅 기준일 확인 불가';
     const supplyErrNote = info._invErr
         ? '<div style="font-size:10px;color:#ff6b6b;margin-bottom:4px">⚠ 수급 데이터 오류: ' + info._invErr + '</div>'
         : '';
+
+    // 기관 세부 서브행 (값이 있는 항목만 표시)
+    const instSubs = [
+        subRow('금융투자', info.fnncNetAmt),
+        subRow('투신',     info.ivtrNetAmt),
+        subRow('사모',     info.prvtNetAmt),
+        subRow('보험',     info.insrcNetAmt),
+        subRow('은행',     info.bankNetAmt),
+        subRow('사업법인', info.bsnsNetAmt),
+        subRow('기타법인', info.etcNetAmt),
+    ].join('');
+
+    function mainRow(label, amt, subs) {
+        return '<div class="supply-row" style="flex-direction:column;align-items:stretch;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center">' +
+            '<span class="supply-label">' + label + '</span>' +
+            '<div style="text-align:right">' + fmtAmt_(amt) + '</div>' +
+            '</div>' +
+            (subs || '') +
+            '</div>';
+    }
+
     document.getElementById('modal-supply-rows').innerHTML =
         '<div style="font-size:10px;color:var(--sub);margin-bottom:8px">' + supplyDateNote + '</div>' +
         supplyErrNote +
-        rows.map(r =>
-            '<div class="supply-row">' +
-            '<span class="supply-label">' + r.label + '</span>' +
-            '<div style="flex:1;text-align:right;">' +
-            fmtAmt_(r.amt) +
-            (r.detail ? '<div class="supply-detail" style="font-size:10px;color:var(--sub);margin-top:2px">' + r.detail + '</div>' : '') +
-            '</div></div>'
-        ).join('');
+        mainRow('기관',   info.instNetAmt, instSubs) +
+        mainRow('외국인', info.frnNetAmt,  '') +
+        mainRow('개인',   info.indvNetAmt, '');
 }
 function _destroyChart() {
     if (_chart) {
@@ -1766,3 +1861,4 @@ setInterval(updateDashboard, 60000);
 </script>
 </body>
 </html>
+<!-- test_sync -->
