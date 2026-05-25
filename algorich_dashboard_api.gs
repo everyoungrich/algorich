@@ -111,7 +111,10 @@ function getTrades() {
     var values = sheet.getDataRange().getValues();
     if (values.length <= 1) return;
     values.slice(1).forEach(function(r) {
-      if (!r[0] && !r[3]) return; // 빈 행 스킵
+      var tradeId  = String(r[0] || '').trim();
+      var name     = String(r[3] || '').trim();
+      var buyPrice = parseFloat(r[5]) || 0;
+      if (!tradeId || !name || buyPrice <= 0) return; // TradeID·종목명·매수가 없으면 스킵
       all.push({
         tradeId:   String(r[0]  || ''),
         status:    String(r[1]  || ''),
@@ -135,6 +138,41 @@ function getTrades() {
   // 최근 100건만 반환 (매수일 기준 내림차순)
   all.sort(function(a, b) { return (b.buyDate || '').localeCompare(a.buyDate || ''); });
   return all.slice(0, 100);
+}
+
+
+// ============================================================
+// 매매일지 쓰레기 행 정리 — Apps Script 편집기에서 직접 실행
+// 실행 방법: 편집기 상단 함수 선택 → cleanJunkRows → 실행
+// ============================================================
+function cleanJunkRows() {
+  var wb = SpreadsheetApp.openById(MAIN_DB_ID);
+  var stratSheets = ['NH-Sniper', '1D-Rebound', '20D-Swing', '20D-Envelope', '200D-Trend'];
+  var totalDeleted = 0;
+
+  stratSheets.forEach(function(sheetName) {
+    var sheet = wb.getSheetByName(sheetName);
+    if (!sheet) return;
+
+    var values = sheet.getDataRange().getValues();
+    if (values.length <= 1) return; // 헤더만 있으면 스킵
+
+    // 뒤에서부터 순회해야 행 삭제 시 인덱스 안 틀림
+    for (var i = values.length - 1; i >= 1; i--) {
+      var r = values[i];
+      var tradeId  = String(r[0] || '').trim();
+      var name     = String(r[3] || '').trim();
+      var buyPrice = parseFloat(r[5]) || 0;
+      if (!tradeId || !name || buyPrice <= 0) {
+        sheet.deleteRow(i + 1); // 시트 행은 1-indexed
+        totalDeleted++;
+      }
+    }
+    Logger.log(sheetName + ' 정리 완료');
+  });
+
+  Logger.log('총 ' + totalDeleted + '개 쓰레기 행 삭제 완료');
+  SpreadsheetApp.getUi().alert('정리 완료: ' + totalDeleted + '개 행 삭제됨');
 }
 
 
