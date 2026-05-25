@@ -1349,8 +1349,11 @@ function renderHoldings(tradeRows) {
         const name = esc(r.name||'');
         const buyP = r.buyPrice||0, qty = r.buyQty||0, pnl = r.profitRt||0;
         const prog = Math.max(0, Math.min(100, ((pnl+3)/28)*100));
+        const hModePill = (r.mode === '실전')
+            ? '<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;background:rgba(0,255,163,0.15);color:var(--green);letter-spacing:.5px">실전</span>'
+            : '<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;background:rgba(96,165,250,0.15);color:#60a5fa;letter-spacing:.5px">모의</span>';
         return '<tr class="lead-row" data-code="' + code + '" data-name="' + name + '" data-price="' + buyP + '" data-rate="0" data-buy-price="' + buyP + '">' +
-            '<td><div>' + name + '</div><div class="sub-text">' + code + ' · ' + stratPill(r.strategy) + '</div></td>' +
+            '<td><div>' + name + ' ' + hModePill + '</div><div class="sub-text">' + code + ' · ' + stratPill(r.strategy) + '</div></td>' +
             '<td><div>' + fmtNum(buyP) + '원</div><div class="sub-text">×' + qty + '주</div></td>' +
             '<td><div class="' + (pnl>=0?'up':'down') + '">' + fmtPct(pnl) + '</div>' +
             '<div class="pos-progress"><div class="pos-progress-bar ' + (pnl<0?'red':'') + '" style="width:' + prog + '%"></div></div></td>' +
@@ -1389,8 +1392,11 @@ function _renderJournalTable(rows) {
         const pnl  = r.profitRt||0, isDone = r.status === '완료';
         const pnlCls = isDone ? (pnl>0?'pnl-pos':pnl<0?'pnl-neg':'pnl-neu') : 'pnl-neu';
         const statPill = isDone ? '<span class="status-pill status-done">완료</span>' : '<span class="status-pill status-hold">보유 중</span>';
+        const modePill = (r.mode === '실전')
+            ? '<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;background:rgba(0,255,163,0.15);color:var(--green);letter-spacing:.5px">실전</span>'
+            : '<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;background:rgba(96,165,250,0.15);color:#60a5fa;letter-spacing:.5px">모의</span>';
         return '<tr class="lead-row" data-code="' + code + '" data-name="' + name + '" data-price="' + (r.buyPrice||0) + '" data-rate="' + pnl + '" data-buy-price="' + (r.buyPrice||0) + '" data-sell-price="' + (r.sellPrice||0) + '" data-strategy="' + esc(r.strategy||'') + '">' +
-            '<td><div>' + name + '</div><div class="sub-text">' + code + ' · ' + stratPill(r.strategy) + '</div></td>' +
+            '<td><div>' + name + ' ' + modePill + '</div><div class="sub-text">' + code + ' · ' + stratPill(r.strategy) + '</div></td>' +
             '<td style="color:var(--sub)">' + (r.buyDate||'-') + '</td>' +
             '<td>' + fmtNum(r.buyPrice||0) + '원</td>' +
             '<td style="color:var(--sub)">' + (isDone ? r.sellDate||'-' : '-') + '</td>' +

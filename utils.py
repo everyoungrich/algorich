@@ -64,7 +64,7 @@ class GoogleSheetsManager:
             worksheet = self.main_wb.add_worksheet(title=target_tab, rows=1000, cols=15)
             worksheet.append_row([
                 "Trade ID", "상태", "종목코드", "종목명", "매수일자", "매수단가", 
-                "매수수량", "투자금액", "매도일자", "매도단가", "수익률(%)", "수익금(원)", "비고(로그)"
+                "매수수량", "투자금액", "매도일자", "매도단가", "수익률(%)", "수익금(원)", "비고(로그)", "모드"
             ])
             return worksheet
 
@@ -134,11 +134,11 @@ class GoogleSheetsManager:
             write_log(f"과거 주도주 조회 실패: {e}")
             return []
 
-    def log_buy(self, trade_id, code, name, price, qty, strategy_type="1D_RB"):
+    def log_buy(self, trade_id, code, name, price, qty, strategy_type="1D_RB", mode="모의"):
         if not self.initialized: return
         now_str = datetime.now().strftime("%Y-%m-%d")
         invest_amt = price * qty
-        row = [trade_id, "보유", code, name, now_str, int(price), int(qty), int(invest_amt), "", "", "", "", "매수완료"]
+        row = [trade_id, "보유", code, name, now_str, int(price), int(qty), int(invest_amt), "", "", "", "", "매수완료", mode]
         try:
             target_sheet = self.get_main_sheet(strategy_type)
             target_sheet.append_row(row, value_input_option='USER_ENTERED')

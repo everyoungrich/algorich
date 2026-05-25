@@ -40,13 +40,15 @@ class KISBroker(BaseBroker):
 
     def __init__(self, account_no, gs_manager=None,
                  real_app_key=None, real_app_secret=None,
-                 mock_app_key=None, mock_app_secret=None):
+                 mock_app_key=None, mock_app_secret=None,
+                 is_real=False):
         self.real_app_key    = real_app_key    or os.getenv("KIS_REAL_APP_KEY", "")
         self.real_app_secret = real_app_secret or os.getenv("KIS_REAL_APP_SECRET", "")
         self.mock_app_key    = mock_app_key    or os.getenv("KIS_MOCK_APP_KEY", "")
         self.mock_app_secret = mock_app_secret or os.getenv("KIS_MOCK_APP_SECRET", "")
         self.account_no = account_no
         self.gs_manager = gs_manager
+        self.is_real = is_real  # True=실전주문, False=모의주문
 
         if "-" in self.account_no:
             self.cano, self.acnt_prdt_cd = self.account_no.split("-")
@@ -117,26 +119,36 @@ class KISBroker(BaseBroker):
             "tr_id": tr_id
         }
 
-    # ── 주문·잔고 (모의 키 사용) ────────────────────────────────────
+    # ── 주문·잔고 (is_real 플래그로 실전/모의 자동 분기) ──────────
 
     def place_order(self, code, qty, price=0, is_buy=True):
-        if not self._get_mock_token(): return False
+        if self.is_real:
+            # 실전 주문
+            if not self._get_real_token(): return False
+            url = f"{self.REAL_BASE_URL}/uapi/domestic-stock/v1/trading/order-cash"
+            tr_id = "TTTC0802U" if is_buy else "TTTC0801U"
+            headers = self._real_headers(tr_id)
+            mode_tag = "실전"
+        else:
+            # 모의 주문
+            if not self._get_mock_token(): return False
+            url = f"{self.MOCK_BASE_URL}/uapi/domestic-stock/v1/trading/order-cash"
+            tr_id = "VTTC0802U" if is_buy else "VTTC0801U"
+            headers = self._mock_headers(tr_id)
+            mode_tag = "모의"
 
-        url = f"{self.MOCK_BASE_URL}/uapi/domestic-stock/v1/trading/order-cash"
-        tr_id = "VTTC0802U" if is_buy else "VTTC0801U"
         body = {
             "CANO": self.cano, "ACNT_PRDT_CD": self.acnt_prdt_cd,
             "PDNO": code, "ORD_DVSN": "01",
             "ORD_QTY": str(qty), "ORD_UNPR": str(price)
         }
         res = safe_request('POST', url, gs_manager=self.gs_manager,
-                           headers=self._mock_headers(tr_id),
-                           data=json.dumps(body), timeout=10)
+                           headers=headers, data=json.dumps(body), timeout=10)
         if res and res.status_code == 200:
             data = res.json()
             if data.get("rt_cd") == "0":
                 side = "매수" if is_buy else "매도"
-                write_log(f"[{side} 주문성공(시장가)] 종목: {code}, 수량: {qty}주")
+                write_log(f"[{side} 주문성공({mode_tag}·시장가)] 종목: {code}, 수량: {qty}주")
                 return True
             else:
                 write_log(f"[주문 실패] rt_cd={data.get('rt_cd')}, 메시지={data.get('msg1')}, 종목={code}")
@@ -146,9 +158,15 @@ class KISBroker(BaseBroker):
         return False
 
     def get_balance(self):
-        if not self._get_mock_token(): return None, None, None
+        if self.is_real:
+            if not self._get_real_token(): return None, None, None
+            url = f"{self.REAL_BASE_URL}/uapi/domestic-stock/v1/trading/inquire-balance"
+            headers = self._real_headers("TTTC8434R")
+        else:
+            if not self._get_mock_token(): return None, None, None
+            url = f"{self.MOCK_BASE_URL}/uapi/domestic-stock/v1/trading/inquire-balance"
+            headers = self._mock_headers("VTTC8434R")
 
-        url = f"{self.MOCK_BASE_URL}/uapi/domestic-stock/v1/trading/inquire-balance"
         params = {
             "CANO": self.cano, "ACNT_PRDT_CD": self.acnt_prdt_cd,
             "AFHR_FLPR_YN": "N", "OFL_YN": "", "INQR_DVSN": "02",
@@ -157,8 +175,7 @@ class KISBroker(BaseBroker):
             "CTX_AREA_FK100": "", "CTX_AREA_NK100": ""
         }
         res = safe_request('GET', url, gs_manager=self.gs_manager,
-                           headers=self._mock_headers("VTTC8434R"),
-                           params=params, timeout=10)
+                           headers=headers, params=params, timeout=10)
         if res is None or res.status_code != 200:
             return None, None, None
 
@@ -348,7 +365,7 @@ class KISBroker(BaseBroker):
                         vol_ratio=vol_rate
                     )
                     if is_logged:
-                        write_log(f"[S-Class 확정] {name}({code}) 등락:{price_rate:.1f}% 거래량:{vol_rate:.0f}% - 시트 기�하 완료.")
+                        write_log(f"[S-Class 확정] {name}({code}) 등락:{price_rate:.1f}% 거래량:{vol_rate:.0f}% - 시트 기하 완료.")
                 s_class_list.append(cand)
 
             time.sleep(0.2)

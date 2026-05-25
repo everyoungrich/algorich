@@ -95,36 +95,46 @@ function getLeadStocks() {
 
 
 // ============================================================
-// 매매일지 반환
+// 매매일지 반환 — 전략 시트 전체 통합
+// 컬럼: [0]TradeID [1]상태 [2]코드 [3]종목명 [4]매수일 [5]매수가
+//       [6]수량 [7]투자금 [8]매도일 [9]매도가 [10]수익률 [11]수익금
+//       [12]비고 [13]모드(모의/실전)
 // ============================================================
 function getTrades() {
-  var wb    = SpreadsheetApp.openById(MAIN_DB_ID);
-  // '1D-Rebound' 탭이 없으면 'NH-Sniper' 탭 시도, 둘 다 없으면 빈 배열 반환
-  var sheet = wb.getSheetByName(MAIN_SHEET_NAME)
-           || wb.getSheetByName('NH-Sniper')
-           || null;
-  if (!sheet) return [];
+  var wb = SpreadsheetApp.openById(MAIN_DB_ID);
+  var stratSheets = ['NH-Sniper', '1D-Rebound', '20D-Swing', '20D-Envelope', '200D-Trend'];
+  var all = [];
 
-  var values = sheet.getDataRange().getValues();
-  if (values.length <= 1) return [];
-
-  return values.slice(1).slice(-50).map(function(r) {
-    return {
-      tradeId:   String(r[0]  || ''),
-      status:    String(r[1]  || ''),
-      code:      String(r[2]  || '').padStart(6, '0'),
-      name:      String(r[3]  || ''),
-      buyDate:   formatCell(r[4]),
-      buyPrice:  toNum(r[5]),
-      qty:       toNum(r[6]),
-      invest:    toNum(r[7]),
-      sellDate:  formatCell(r[8]),
-      sellPrice: toNum(r[9]),
-      profitRt:  toNum(r[10]),
-      profit:    toNum(r[11]),
-      remark:    String(r[12] || '')
-    };
+  stratSheets.forEach(function(sheetName) {
+    var sheet = wb.getSheetByName(sheetName);
+    if (!sheet) return;
+    var values = sheet.getDataRange().getValues();
+    if (values.length <= 1) return;
+    values.slice(1).forEach(function(r) {
+      if (!r[0] && !r[3]) return; // 빈 행 스킵
+      all.push({
+        tradeId:   String(r[0]  || ''),
+        status:    String(r[1]  || ''),
+        code:      String(r[2]  || '').padStart(6, '0'),
+        name:      String(r[3]  || ''),
+        buyDate:   formatCell(r[4]),
+        buyPrice:  toNum(r[5]),
+        qty:       toNum(r[6]),
+        invest:    toNum(r[7]),
+        sellDate:  formatCell(r[8]),
+        sellPrice: toNum(r[9]),
+        profitRt:  toNum(r[10]),
+        profit:    toNum(r[11]),
+        remark:    String(r[12] || ''),
+        mode:      String(r[13] || '모의'),   // 모의 / 실전
+        strategy:  sheetName                  // 시트명 = 전략명
+      });
+    });
   });
+
+  // 최근 100건만 반환 (매수일 기준 내림차순)
+  all.sort(function(a, b) { return (b.buyDate || '').localeCompare(a.buyDate || ''); });
+  return all.slice(0, 100);
 }
 
 

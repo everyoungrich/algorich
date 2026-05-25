@@ -19,8 +19,9 @@ class NHSniperStrategy(BaseStrategy):
     """
     name = "NH-Sniper"
 
-    def __init__(self, broker, gs_manager=None):
+    def __init__(self, broker, gs_manager=None, mode="모의"):
         super().__init__(broker, gs_manager)
+        self.mode = mode  # "모의" or "실전" — 매매일지 기록용
         self.bought_today = set()
         self.partial_sold_tracker = set()
         self.daily_starting_eval = 0
@@ -239,7 +240,7 @@ class NHSniperStrategy(BaseStrategy):
                 trade_id = str(uuid.uuid4())[:8]
                 if self.gs_manager:
                     self.gs_manager.log_buy(trade_id, code, name,
-                                            cand["price"], qty, "NH_Sniper")
+                                            cand["price"], qty, "NH_Sniper", self.mode)
                 self.bought_today.add(code)
             time.sleep(0.5)
 

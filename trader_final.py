@@ -80,20 +80,58 @@ def run_424_recovery(broker, gs_manager):
         time.sleep(0.5) 
 
 
+# =====================================================================
+# [전략별 계좌·모드 설정]
+# mode: "MOCK"=모의매매, "REAL"=실전매매
+# account_no: 전략별 독립 계좌 (.env에서 로드, 미설정 시 기본 계좌 사용)
+# =====================================================================
+STRATEGY_CONFIG = {
+    "NH-Sniper": {
+        "mode":       os.getenv("NH_SNIPER_MODE", "MOCK"),
+        "account_no": os.getenv("KIS_ACCOUNT_NH_SNIPER", ACCOUNT_NO),
+    },
+    "1D-Rebound": {
+        "mode":       os.getenv("REBOUND_MODE", "MOCK"),
+        "account_no": os.getenv("KIS_ACCOUNT_REBOUND", ACCOUNT_NO),
+    },
+    "20D-Swing": {
+        "mode":       os.getenv("SWING_MODE", "MOCK"),
+        "account_no": os.getenv("KIS_ACCOUNT_SWING", ACCOUNT_NO),
+    },
+    "20D-Envelope": {
+        "mode":       os.getenv("ENVELOPE_MODE", "MOCK"),
+        "account_no": os.getenv("KIS_ACCOUNT_ENVELOPE", ACCOUNT_NO),
+    },
+    "200D-Trend": {
+        "mode":       os.getenv("TREND_MODE", "MOCK"),
+        "account_no": os.getenv("KIS_ACCOUNT_TREND", ACCOUNT_NO),
+    },
+}
+
+
+def build_broker(cfg, gs_manager):
+    """전략 설정에 따라 KISBroker 인스턴스 생성 (is_real 자동 분기)"""
+    is_real = cfg["mode"] == "REAL"
+    return KISBroker(
+        cfg["account_no"], gs_manager=gs_manager,
+        real_app_key=REAL_APP_KEY, real_app_secret=REAL_APP_SECRET,
+        mock_app_key=MOCK_APP_KEY, mock_app_secret=MOCK_APP_SECRET,
+        is_real=is_real
+    )
+
+
 if __name__ == "__main__":
-    write_log("=== [V4.0 NH-Sniper Agent] 신고가 상승음봉 자동매매 엔진 개시 (시세=실전키, 주문=모의키) ===")
+    nh_cfg  = STRATEGY_CONFIG["NH-Sniper"]
+    mode_kr = "실전" if nh_cfg["mode"] == "REAL" else "모의"
+    write_log(f"=== [V5.0 NH-Sniper Agent] 신고가 상승음봉 자동매매 개시 ({mode_kr}·계좌:{nh_cfg['account_no']}) ===")
 
     # 1. 초기화 (Utils, Broker, Strategy)
     gs_manager = GoogleSheetsManager()
-    kis_broker = KISBroker(
-        ACCOUNT_NO, gs_manager=gs_manager,
-        real_app_key=REAL_APP_KEY, real_app_secret=REAL_APP_SECRET,
-        mock_app_key=MOCK_APP_KEY, mock_app_secret=MOCK_APP_SECRET
-    )
-    strategy = NHSniperStrategy(broker=kis_broker, gs_manager=gs_manager)
+    kis_broker = build_broker(nh_cfg, gs_manager)
+    strategy   = NHSniperStrategy(broker=kis_broker, gs_manager=gs_manager, mode=mode_kr)
 
-    write_log(f"[환경확인] 시세URL={kis_broker.REAL_BASE_URL} / 주문URL={kis_broker.MOCK_BASE_URL}")
-    write_log(f"[계좌확인] CANO={kis_broker.cano}, ACNT_PRDT_CD='{kis_broker.acnt_prdt_cd}'")
+    write_log(f"[환경확인] 시세URL={kis_broker.REAL_BASE_URL}")
+    write_log(f"[계좌확인] CANO={kis_broker.cano}, ACNT_PRDT_CD='{kis_broker.acnt_prdt_cd}', 모드={mode_kr}")
 
     # 백필 로직 1회 호출 (주석 처리 - build_watchlist 에러 발생)
     init_token = kis_broker.get_access_token()
