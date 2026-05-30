@@ -80,15 +80,15 @@ function getLeadStocks() {
 
   return values.slice(1).slice(-2000).map(function(r) {
     return {
-      date:       formatCell(r[0]),
-      code:       String(r[1] || '').padStart(6, '0'),
-      name:       String(r[2] || ''),
-      close:      toNum(r[3]),
-      changeRate: toNum(r[4]),
-      amt:        toNum(r[5]),
-      rank:       toNum(r[6]),
-      remark:     String(r[7] || ''),
-      volRatio:   toNum(r[8] || 0)   // 거래량비(%) — 구버전 행은 0 반환
+      date:          formatCell(r[0]),
+      code:          String(r[1] || '').padStart(6, '0'),
+      name:          String(r[2] || ''),
+      close:         toNum(r[3]),
+      changeRate:    toNum(r[4]),
+      scan_amt_100m: toNum(r[5]),   // 스캔일 거래대금 (억) — 이후 변경되지 않는 스냅샷
+      rank:          toNum(r[6]),
+      remark:        String(r[7] || ''),
+      volRatio:      toNum(r[8] || 0)   // 거래량비(%) — 구버전 행은 0 반환
     };
   });
 }
@@ -424,8 +424,8 @@ function getStockInfo(code) {
     low:          toNum(pd.stck_lwpr),
 
     // ── 거래량/대금 ──
-    volume:       toNum(pd.acml_vol),
-    tradingValue: toNum(pd.acml_tr_pbmn), // 원 단위
+    volume:           toNum(pd.acml_vol),
+    current_amt_100m: pd.acml_tr_pbmn ? Math.floor(toNum(pd.acml_tr_pbmn) / 1e8) : 0, // 현재 기준일 거래대금 (억)
 
     // ── 52주 ──
     high52w:      toNum(pd.w52_hgpr),
@@ -531,8 +531,4 @@ function toNum(val) {
   return isNaN(n) ? 0 : n;
 }
 
-// KIS 토큰 캐시 수동 초기화 — KIS_MODE 변경 후 GAS 편집기에서 한 번 실행
-function clearKisToken() {
-  CacheService.getScriptCache().remove('KIS_TOKEN');
-  Logger.log('KIS 토큰 캐시 삭제 완료');
-}
+// KIS 토큰 캐시 수동 초기화 — KIS_MODE �

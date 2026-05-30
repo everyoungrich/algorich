@@ -792,7 +792,7 @@ function showSection(sec) {
 
 // ── 신호 점수 ─────────────────────────────────────────────────
 function calcScore(r) {
-    const rate = r.changeRate || 0, amt = r.amt || 0, rank = r.rank || 40;
+    const rate = r.changeRate || 0, amt = r.scan_amt_100m || 0, rank = r.rank || 40;
     const rs = Math.min(50, Math.max(0, (rate - 10) * 2.5));
     const as = Math.min(30, amt / 167);
     const ks = Math.max(0, 20 - (rank - 1) * 0.5);
@@ -961,7 +961,7 @@ function _renderMonthContent(month) {
         '— ' + month.replace('-','.') + ' · ' + rows.length + '건 (' + sortedDates.length + '일)';
 
     el.innerHTML = sortedDates.map(date => {
-        const group = [...grouped.get(date)].sort((a,b) => (b.amt||0) - (a.amt||0));
+        const group = [...grouped.get(date)].sort((a,b) => (b.scan_amt_100m||0) - (a.scan_amt_100m||0));
         const topScore = Math.max(...group.map(r => calcScore(r)));
         const rowsHtml = group.map(r => {
             const rate  = r.changeRate || 0, price = r.close || 0;
@@ -972,11 +972,11 @@ function _renderMonthContent(month) {
             const sector = getSector(r.name||'');
             const secTag = sector ? '<span class="sec-tag">' + sector + '</span>' : '';
             const isHolding = _holdingsMap[code] ? '<span style="color:var(--gold);font-size:10px">★보유</span>' : '';
-            return '<tr class="lead-row" data-code="' + code + '" data-name="' + name + '" data-price="' + price + '" data-rate="' + rate + '">' +
+            return '<tr class="lead-row" data-code="' + code + '" data-name="' + name + '" data-price="' + price + '" data-rate="' + rate + '" data-amt="' + (r.scan_amt_100m||0) + '" data-date="' + esc(r.date||'') + '">' +
                 '<td><div>' + name + ' ' + scoreBadge(sc) + ' ' + isHolding + '</div>' +
                 '<div class="sub-text">' + code + secTag + '</div></td>' +
                 '<td><span class="' + cls + '">' + fmtPct(rate) + '</span></td>' +
-                '<td style="color:var(--sub);font-size:11px">' + fmtAmt(r.amt) + '</td>' +
+                '<td style="color:var(--sub);font-size:11px">' + fmtAmt(r.scan_amt_100m) + '</td>' +
                 '<td>' + fmtNum(price) + '원</td></tr>';
         }).join('');
         return '<div class="date-group">' +
@@ -1204,7 +1204,7 @@ function _renderStratContent(key, rows) {
                 <div class="cand-sub">${code}</div>
                 <div class="cond-row">${_condBadge(r.conds, info)}</div>
             </div>
-            <div class="cand-rate-col"><span class="${cls}" style="font-size:13px;font-weight:700">${fmtPct(rate)}</span><div style="font-size:10px;color:var(--sub);margin-top:2px">${fmtAmt(r.amt)}</div></div>
+            <div class="cand-rate-col"><span class="${cls}" style="font-size:13px;font-weight:700">${fmtPct(rate)}</span><div style="font-size:10px;color:var(--sub);margin-top:2px">${fmtAmt(r.scan_amt_100m)}</div></div>
             <div class="cand-price-col"><div style="font-size:13px;font-weight:700">${fmtNum(price)}원</div><div style="font-size:10px;color:var(--sub);margin-top:2px">${latestDate}</div></div>
         </div>`;
     }).join('');
@@ -1307,7 +1307,7 @@ async function analyzeMAForStrat(key) {
                 <span class="cand-ma-dist ${distCls}">${info.maCondLabel} ${dist>=0?'+':''}${dist.toFixed(1)}%</span>
                 <div style="font-size:10px;color:var(--sub);margin-top:2px">${fmtNum(r.maValue||0)}원</div>
             </div>
-            <div class="cand-price-col"><div style="font-size:13px;font-weight:700">${fmtNum(r.close||0)}원</div><div style="font-size:10px;color:var(--sub);margin-top:2px">${fmtAmt(r.amt)}</div></div>
+            <div class="cand-price-col"><div style="font-size:13px;font-weight:700">${fmtNum(r.close||0)}원</div><div style="font-size:10px;color:var(--sub);margin-top:2px">${fmtAmt(r.scan_amt_100m)}</div></div>
         </div>`;
     }).join('');
 
@@ -1572,8 +1572,8 @@ function calcMA(candles, period) {
     });
 }
 
-function openChartModal(code, name, price, rate, buyPrice, sellPrice, strategy) {
-    _modalState = { code, name, price, rate, tab:'1Y', buyPrice:buyPrice||0, sellPrice:sellPrice||0, strategy:strategy||'' };
+function openChartModal(code, name, price, rate, buyPrice, sellPrice, strategy, scanAmt, scanDate) {
+    _modalState = { code, name, price, rate, tab:'1Y', buyPrice:buyPrice||0, sellPrice:sellPrice||0, strategy:strategy||'', scan_amt_100m:Number(scanAmt)||0, scanDate:scanDate||'' };
     document.getElementById('chart-overlay').style.display = 'flex';
     document.getElementById('modal-name').textContent  = name;
     document.getElementById('modal-code').textContent  = code;
@@ -1720,8 +1720,26 @@ function _renderInfoGrid(info) {
     const mcB = info.marketCapB||0;
     let mcStr = '-';
     if (mcB>0) { const jo=Math.floor(mcB/10000),eok=mcB%10000; mcStr=jo>0?jo+'조'+(eok>0?' '+eok+'억':''):mcB+'억'; }
-    const tvB = info.tradingValue>0?Math.floor(info.tradingValue/1e8):0;
-    const today = info.dataDate || '-';
+    // current_amt_100m: 기준일(현재) 거래대금 (억) — GAS inquire-price(FHKST01010100) 기준
+    const current_amt_100m = info.current_amt_100m || 0;
+    // scan_amt_100m: 스캔 당시 거래대금 (억) — Google Sheets 스냅샷값
+    const scan_amt_100m    = _modalState.scan_amt_100m || 0;
+    const scanDate         = _modalState.scanDate || '';
+    const today            = info.dataDate || '-';
+
+    // 거래대금 표시:
+    //   메인: scan_amt_100m (스캔일 기록값, 고정 스냅샷)
+    //   서브: current_amt_100m (현재 기준일값, 다를 수 있음 → 정상)
+    let tvStr;
+    if (scan_amt_100m > 0 && current_amt_100m > 0) {
+        const scanLabel = scanDate ? '포착일(' + scanDate + ')' : '포착일';
+        tvStr = '<span style="color:var(--fg)">' + fmtAmt(scan_amt_100m) + '</span>'
+              + '<br><span style="font-size:10px;color:var(--sub)">' + today + ' 기준: ' + fmtAmt(current_amt_100m) + '</span>';
+    } else if (scan_amt_100m > 0) {
+        tvStr = fmtAmt(scan_amt_100m) + '<br><span style="font-size:10px;color:var(--sub)">포착일 기록값</span>';
+    } else {
+        tvStr = current_amt_100m > 0 ? fmtAmt(current_amt_100m) : '-';
+    }
 
     // PER·PBR: 0이면 "N/A" (적자·신규상장), 양수면 소수 1자리
     const perStr = info.per > 0  ? Number(info.per).toFixed(1) + 'x'
@@ -1737,7 +1755,7 @@ function _renderInfoGrid(info) {
         {label:'고가',     val:fmtNum(info.high||0)+'원',   cls:'up'},
         {label:'저가',     val:fmtNum(info.low||0)+'원',    cls:'down'},
         {label:'거래량',   val:info.volume>0 ? fmtNum(info.volume)+'주' : '-'},
-        {label:'거래대금', val:tvB>0 ? fmtAmt(tvB) : '-'},
+        {label:'거래대금', val:tvStr},
         {label:'시총',     val:mcStr},
         {label:'PER / PBR',val: perStr + ' / ' + pbrStr},
         {label:'EPS / BPS',val: epsStr + ' / ' + bpsStr},
@@ -1832,33 +1850,4 @@ function _destroyChart() {
         if (prev && prev._onResize) window.removeEventListener('resize', prev._onResize);
         _chart.remove(); _chart = null;
     }
-    _maSeries = {}; _currentCnds = [];
-    Array.from(document.getElementById('chart-wrap').children).forEach(el => { if (el.id!=='chart-msg') el.remove(); });
-    const msgEl = document.getElementById('chart-msg');
-    if (msgEl) msgEl.style.display = 'flex';
-}
-function closeChart() { document.getElementById('chart-overlay').style.display = 'none'; _destroyChart(); }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChart(); });
-document.getElementById('chart-overlay').addEventListener('click', function(e) { if (e.target === this) closeChart(); });
-
-function _delegateRowClick(containerId) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    container.addEventListener('click', e => {
-        const tr = e.target.closest('tr[data-code]');
-        if (!tr) return;
-        openChartModal(tr.dataset.code||'', tr.dataset.name||'', parseFloat(tr.dataset.price)||0,
-            parseFloat(tr.dataset.rate)||0, parseFloat(tr.dataset.buyPrice)||0,
-            parseFloat(tr.dataset.sellPrice)||0, tr.dataset.strategy||'');
-    });
-}
-_delegateRowClick('lead-stock-table');
-_delegateRowClick('holdings-table');
-_delegateRowClick('journal-table');
-
-updateDashboard();
-setInterval(updateDashboard, 60000);
-</script>
-</body>
-</html>
-<!-- test_sync -->
+    _maSeries = {}
