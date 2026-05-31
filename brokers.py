@@ -365,8 +365,9 @@ class KISBroker(BaseBroker):
 
         for sosok in ["0", "1"]:       # 0=KOSPI, 1=KOSDAQ
             for page in [1, 2, 3]:     # 페이지당 ~50종목
-                # sise_trans.nhn = 거래대금 순위 (sise_quant.nhn은 거래량 순위 — 잘못된 URL)
-                url = (f"https://finance.naver.com/sise/sise_trans.nhn"
+                # sise_quant.nhn = 거래량 순위 (과거 날짜 조회 지원)
+                # ⚠️ sise_trans.nhn(거래대금 순위)은 date= 파라미터 미지원 — 사용 불가
+                url = (f"https://finance.naver.com/sise/sise_quant.nhn"
                        f"?sosok={sosok}&date={date_str}&page={page}")
                 try:
                     r = requests.get(
@@ -554,5 +555,4 @@ class KISBroker(BaseBroker):
             name       = cand["name"]
             vol_rate   = cand.get("vol_rate", 0)
             price_rate = cand.get("price_rate", 0)
-            mkt_rank   = cand.get("mkt_rank", 0)
-            daily_info = self.get_daily_pric
+          
