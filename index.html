@@ -984,7 +984,7 @@ function _renderMonthContent(month) {
             '<span class="dg-sub">최고 S' + topScore + '</span>' +
             '<span class="dg-line"></span></div>' +
             '<table class="tbl"><colgroup><col style="width:44%"><col style="width:16%"><col style="width:18%"><col style="width:22%"></colgroup>' +
-            '<thead><tr><th style="text-align:left">종목 · 점수</th><th>등락률</th><th>거래대금</th><th>종가</th></tr></thead>' +
+            '<thead><tr><th style="text-align:left">종목 · 점수</th><th>등락률</th><th>포착일 거래대금</th><th>종가</th></tr></thead>' +
             '<tbody>' + rowsHtml + '</tbody></table></div>';
     }).join('');
 }
@@ -1720,26 +1720,14 @@ function _renderInfoGrid(info) {
     const mcB = info.marketCapB||0;
     let mcStr = '-';
     if (mcB>0) { const jo=Math.floor(mcB/10000),eok=mcB%10000; mcStr=jo>0?jo+'조'+(eok>0?' '+eok+'억':''):mcB+'억'; }
-    // current_amt_100m: 기준일(현재) 거래대금 (억) — GAS inquire-price(FHKST01010100) 기준
+    // current_amt_100m: 마지막 영업일 거래대금 (억) — GAS inquire-price(FHKST01010100) 기준
     const current_amt_100m = info.current_amt_100m || 0;
-    // scan_amt_100m: 스캔 당시 거래대금 (억) — Google Sheets 스냅샷값
-    const scan_amt_100m    = _modalState.scan_amt_100m || 0;
-    const scanDate         = _modalState.scanDate || '';
     const today            = info.dataDate || '-';
 
-    // 거래대금 표시:
-    //   메인: scan_amt_100m (스캔일 기록값, 고정 스냅샷)
-    //   서브: current_amt_100m (현재 기준일값, 다를 수 있음 → 정상)
-    let tvStr;
-    if (scan_amt_100m > 0 && current_amt_100m > 0) {
-        const scanLabel = scanDate ? '포착일(' + scanDate + ')' : '포착일';
-        tvStr = '<span style="color:var(--fg)">' + scanLabel + ': ' + fmtAmt(scan_amt_100m) + '</span>'
-              + '<br><span style="font-size:10px;color:var(--sub)">' + today + ' 기준: ' + fmtAmt(current_amt_100m) + '</span>';
-    } else if (scan_amt_100m > 0) {
-        tvStr = fmtAmt(scan_amt_100m) + '<br><span style="font-size:10px;color:var(--sub)">포착일 기록값</span>';
-    } else {
-        tvStr = current_amt_100m > 0 ? fmtAmt(current_amt_100m) : '-';
-    }
+    // 모달 거래대금: 마지막 영업일 기준 (KIS inquire-price 당일 누적)
+    const tvStr = current_amt_100m > 0
+        ? fmtAmt(current_amt_100m) + '<br><span style="font-size:10px;color:var(--sub)">' + today + ' 기준</span>'
+        : '-';
 
     // PER·PBR: 0이면 "N/A" (적자·신규상장), 양수면 소수 1자리
     const perStr = info.per > 0  ? Number(info.per).toFixed(1) + 'x'
