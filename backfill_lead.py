@@ -296,11 +296,6 @@ for target_date in target_dates:
         # ※ FHKST03010100의 acml_tr_pbmn은 YTD 누적값이므로 사용 불가
         scan_amt_100m = int(curr_clpr * curr_vol / 100_000_000)
 
-        # 거래대금 최소 기준: 500억 미만 제외
-        # (Naver fallback이 거래량 순위를 쓰므로 소형주가 유입될 수 있음)
-        if scan_amt_100m < 500:
-            continue
-
         ls = calculate_leader_score(
             daily_df=df,
             vol_inrt=vol_inrt,
@@ -323,4 +318,13 @@ for target_date in target_dates:
                 leader_score=ls["score"],
                 leader_grade=ls["grade"],
             )
-            existing_date_stock.add((log_date_str, code.zfi
+            existing_date_stock.add((log_date_str, code.zfill(6)))
+
+        found += 1
+        total_logged += 1
+        time.sleep(0.3)
+
+    if found == 0:
+        print("   -> 조건 충족 종목 없음")
+    else:
+        label = "기록 완료" if not DRY_RUN e
