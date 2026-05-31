@@ -1850,4 +1850,34 @@ function _destroyChart() {
         if (prev && prev._onResize) window.removeEventListener('resize', prev._onResize);
         _chart.remove(); _chart = null;
     }
-    _maSeries = {}
+    _maSeries = {}; _currentCnds = [];
+    Array.from(document.getElementById('chart-wrap').children).forEach(el => { if (el.id!=='chart-msg') el.remove(); });
+    const msgEl = document.getElementById('chart-msg');
+    if (msgEl) msgEl.style.display = 'flex';
+}
+function closeChart() { document.getElementById('chart-overlay').style.display = 'none'; _destroyChart(); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChart(); });
+document.getElementById('chart-overlay').addEventListener('click', function(e) { if (e.target === this) closeChart(); });
+
+function _delegateRowClick(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.addEventListener('click', e => {
+        const tr = e.target.closest('tr[data-code]');
+        if (!tr) return;
+        openChartModal(tr.dataset.code||'', tr.dataset.name||'', parseFloat(tr.dataset.price)||0,
+            parseFloat(tr.dataset.rate)||0, parseFloat(tr.dataset.buyPrice)||0,
+            parseFloat(tr.dataset.sellPrice)||0, tr.dataset.strategy||'',
+            parseInt(tr.dataset.amt)||0, tr.dataset.date||'');
+    });
+}
+_delegateRowClick('lead-stock-table');
+_delegateRowClick('holdings-table');
+_delegateRowClick('journal-table');
+
+updateDashboard();
+setInterval(updateDashboard, 60000);
+</script>
+</body>
+</html>
+<!-- test_sync -->

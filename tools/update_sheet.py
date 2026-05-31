@@ -59,10 +59,10 @@ def update():
             df[['clpr', 'hgpr', 'amt', 'vol']] = df[['stck_clpr', 'stck_hgpr', 'acml_tr_pbmn', 'acml_vol']].apply(pd.to_numeric)
             curr = df.iloc[-1]
             prev = df.iloc[-2]
-            change_rate   = (curr['clpr'] - prev['clpr']) / prev['clpr'] * 100
-            scan_amt_100m = int(curr['amt'] / 100_000_000)  # 스캔일 거래대금 (억)
-
-            gs_manager.log_lead_stock(date_str, code, name, int(curr['clpr']), round(change_rate, 2), scan_amt_100m, rank, "S-Class 주도주 포착 (5/4 복구)")
+            change_rate = (curr['clpr'] - prev['clpr']) / prev['clpr'] * 100
+            amt_100m = int(curr['amt'] / 100_000_000)
+            
+            gs_manager.log_lead_stock(date_str, code, name, int(curr['clpr']), round(change_rate, 2), amt_100m, rank, "S-Class 주도주 포착 (5/4 복구)")
             print(f"Logged {name} ({code})")
 
 if __name__ == "__main__":
