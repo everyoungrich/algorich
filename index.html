@@ -1733,7 +1733,7 @@ function _renderInfoGrid(info) {
     let tvStr;
     if (scan_amt_100m > 0 && current_amt_100m > 0) {
         const scanLabel = scanDate ? '포착일(' + scanDate + ')' : '포착일';
-        tvStr = '<span style="color:var(--fg)">' + fmtAmt(scan_amt_100m) + '</span>'
+        tvStr = '<span style="color:var(--fg)">' + scanLabel + ': ' + fmtAmt(scan_amt_100m) + '</span>'
               + '<br><span style="font-size:10px;color:var(--sub)">' + today + ' 기준: ' + fmtAmt(current_amt_100m) + '</span>';
     } else if (scan_amt_100m > 0) {
         tvStr = fmtAmt(scan_amt_100m) + '<br><span style="font-size:10px;color:var(--sub)">포착일 기록값</span>';
