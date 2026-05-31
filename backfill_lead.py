@@ -89,7 +89,9 @@ def get_top_by_amount_pykrx(date_str, top_n=40):
 
     for market in ["KOSPI", "KOSDAQ"]:
         try:
-            df = pykrx_stock.get_market_ohlcv_by_ticker(date_str, market=market)
+            # get_market_cap_by_ticker: 시가총액/거래량/거래대금 반환
+            # get_market_ohlcv_by_ticker는 내부에서 '시가/고가/저가/종가' 컬럼명 오류 발생
+            df = pykrx_stock.get_market_cap_by_ticker(date_str, market=market)
             if df is None or df.empty:
                 continue
             df = df.reset_index()
@@ -99,9 +101,8 @@ def get_top_by_amount_pykrx(date_str, top_n=40):
                 cs = str(c).strip()
                 if cs in ("티커", "Ticker", "종목코드"):
                     col_map[c] = "code"
-                elif "거래대금" in cs or "TradingValue" in cs or cs == "Amount":
+                elif "거래대금" in cs or cs.lower() in ("tradingvalue", "amount"):
                     col_map[c] = "amount"
-            # 첫 번째 컬럼이 티커인 경우 (index.name이 없거나 매핑 실패 시)
             if "code" not in col_map.values() and len(df.columns) > 0:
                 col_map[df.columns[0]] = "code"
             df = df.rename(columns=col_map)
@@ -325,6 +326,4 @@ for target_date in target_dates:
         time.sleep(0.3)
 
     if found == 0:
-        print("   -> 조건 충족 종목 없음")
-    else:
-        label = "기록 완료" if not DRY_RUN e
+        pri
