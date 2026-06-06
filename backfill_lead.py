@@ -1,10 +1,15 @@
 """
-backfill_lead.py -- S-Class Leader Score backfill v2.5
+backfill_lead.py -- S-Class Leader Score backfill v2.6
+
+Changes from v2.5:
+  - pykrx get_market_cap_by_ticker → get_market_ohlcv_by_ticker 로 교체
+    (get_market_cap_by_ticker는 pykrx 최신 버전에서 컬럼명 불일치 오류 발생)
+  - get_market_ohlcv_by_ticker: '거래대금' 컬럼 안정적으로 포함, 인덱스가 '티커'
+  - 종목명 조회: get_market_ticker_name() 유지
 
 Changes from v2.4:
   - 스캔일 거래대금 계산 방식 수정: acml_tr_pbmn(연간 누적값) → 종가×거래량(단일 거래일)
     (FHKST03010100 historical API의 acml_tr_pbmn은 YTD 누적이므로 단일 거래일 값이 아님)
-  - 기존 잘못 기록된 데이터: --overwrite 옵션으로 해당 날짜 재실행 필요
 
 Changes from v2.3:
   - --overwrite 옵션 추가: 대상 날짜의 기존 Google Sheets 행 삭제 후 재기록
@@ -53,7 +58,7 @@ MOCK_APP_SECRET = os.getenv("KIS_MOCK_APP_SECRET")
 ACCOUNT_NO      = os.getenv("KIS_ACCOUNT_NO")
 
 print("=" * 60)
-print("AlgoRich Backfill v2.5  |  DRY_RUN={} NAVER_ONLY={} OVERWRITE={}".format(DRY_RUN, NAVER_ONLY, OVERWRITE))
+print("AlgoRich Backfill v2.6  |  DRY_RUN={} NAVER_ONLY={} OVERWRITE={}".format(DRY_RUN, NAVER_ONLY, OVERWRITE))
 print("REAL_KEY: {}".format("OK" if REAL_APP_KEY else "MISSING"))
 print("MOCK_KEY: {}".format("OK" if MOCK_APP_KEY else "MISSING"))
 print("ACCOUNT:  {}".format("OK" if ACCOUNT_NO  else "MISSING"))
@@ -78,6 +83,11 @@ print()
 
 # ── pykrx 거래대금 순위 함수 ─────────────────────────────────────────────
 def get_top_by_amount_pykrx(date_str, top_n=40):
+    """
+    pykrx get_market_ohlcv_by_ticker 사용 (v2.6).
+    - 반환 DataFrame: 인덱스='티커', 컬럼=['시가','고가','저가','종가','거래량','거래대금','등락률']
+    - get_market_cap_by_ticker는 pykrx 최신 버전에서 컬럼명 불일치 오류 발생하므로 사용하지 않음
+    """
     try:
         from pykrx import stock as pykrx_stock
     except ImportError:
@@ -89,33 +99,26 @@ def get_top_by_amount_pykrx(date_str, top_n=40):
 
     for market in ["KOSPI", "KOSDAQ"]:
         try:
-            # get_market_cap_by_ticker: 시가총액/거래량/거래대금 반환
-            # get_market_ohlcv_by_ticker는 내부에서 '시가/고가/저가/종가' 컬럼명 오류 발생
-            df = pykrx_stock.get_market_cap_by_ticker(date_str, market=market)
+            # get_market_ohlcv_by_ticker: 인덱스=티커, 컬럼에 '거래대금' 포함 (안정적)
+            df = pykrx_stock.get_market_ohlcv_by_ticker(date_str, market=market)
             if df is None or df.empty:
+                print("[WARN] pykrx {} 데이터 없음 (휴장일?)".format(market))
                 continue
+
+            # 인덱스(티커)를 컬럼으로
             df = df.reset_index()
 
-            col_map = {}
-            for c in df.columns:
-                cs = str(c).strip()
-                if cs in ("티커", "Ticker", "종목코드"):
-                    col_map[c] = "code"
-                elif "거래대금" in cs or cs.lower() in ("tradingvalue", "amount"):
-                    col_map[c] = "amount"
-            if "code" not in col_map.values() and len(df.columns) > 0:
-                col_map[df.columns[0]] = "code"
-            df = df.rename(columns=col_map)
-
-            if "code" not in df.columns or "amount" not in df.columns:
-                print("[WARN] pykrx {} 컬럼 부재: {}".format(market, list(df.columns)))
+            # 컬럼명 표준화 — '티커' or 첫 번째 컬럼 → code, '거래대금' → amount
+            idx_col = df.columns[0]  # 보통 '티커'
+            if '거래대금' not in df.columns:
+                print("[WARN] pykrx {} 거래대금 컬럼 없음: {}".format(market, list(df.columns)))
                 continue
 
             for _, row in df.iterrows():
-                code = str(row["code"]).zfill(6)
+                code = str(row[idx_col]).zfill(6)
                 if code in seen:
                     continue
-                amt  = int(row.get("amount", 0) or 0)
+                amt = int(row.get("거래대금", 0) or 0)
                 if amt <= 0:
                     continue
                 try:
@@ -326,4 +329,12 @@ for target_date in target_dates:
         time.sleep(0.3)
 
     if found == 0:
-        pri
+        print("   -> 조건 충족 종목 없음")
+    else:
+        label = "기록 완료" if not DRY_RUN else "(DRY-RUN 기록 생략)"
+        print("   -> {}종목 {}".format(found, label))
+    print()
+
+print("=" * 60)
+label = "기록됨" if not DRY_RUN else "발견 (DRY-RUN)"
+print("전체 백필 완료: 총 {}종목 {}".format(total_logged, label))
