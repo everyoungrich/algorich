@@ -399,21 +399,21 @@ class KISBroker(BaseBroker):
                         if _is_etf_etn(code, name):
                             continue
 
-                        # td 직접 텍스트(span 미사용)에서 숫자 추출 (콤마 제거)
-                        # Naver sise_quant.nhn 컬럼 순서 (직접 td 텍스트만):
+                        # td 직접 텍스트에서 숫자 추출 (콤마 제거)
+                        # Naver sise_quant.nhn 직접 <td> 텍스트 컬럼 순서:
                         #   [0]=거래량(주)  [1]=거래대금(백만원)  [2]=시가총액(백만원)  [3]=전일거래량(주)
-                        # 현재가/전일비는 <span> 내부라 이 패턴에 미포함
+                        # 현재가/전일비는 <span> 태그 내부라 이 패턴에 미포함
                         nums = []
-                        for raw in _re.findall(r"</[^>]+>\s*([0-9,]+)\s*</td>", tr):
+                        for raw in _re.findall(r">([0-9,]+)</td>", tr):
                             try:
                                 nums.append(int(raw.replace(",", "")))
                             except ValueError:
                                 pass
-                        if len(nums) < 2:
+                        if len(nums) < 4:
                             continue
 
-                        # 거래대금(백만원): nums[1] = 거래대금 컬럼
-                        # (nums[0]=거래량, nums[2]=시가총액 — max()로 잡으면 시가총액이 선택되는 버그 수정)
+                        # 거래대금(백만원): nums[1] (nums[0]=거래량, nums[2]=시가총액)
+                        # 기존 max(nums)는 시가총액을 선택하는 버그 — nums[1]로 수정
                         amount_million = nums[1]
                         if amount_million < 100:  # 100백만원(=1억) 미만 스킵
                             continue
