@@ -1,11 +1,11 @@
 """
-backfill_lead.py -- S-Class Leader Score backfill v2.6
+backfill_lead.py -- S-Class Leader Score backfill v2.7
 
-Changes from v2.5:
-  - pykrx get_market_cap_by_ticker → get_market_ohlcv_by_ticker 로 교체
-    (get_market_cap_by_ticker는 pykrx 최신 버전에서 컬럼명 불일치 오류 발생)
-  - get_market_ohlcv_by_ticker: '거래대금' 컬럼 안정적으로 포함, 인덱스가 '티커'
-  - 종목명 조회: get_market_ticker_name() 유지
+Changes from v2.6:
+  - pykrx 상위 API 완전 제거 → 내부 전종목시세().fetch() 직접 사용
+    (상위 API는 버전에 따라 컬럼명 변환 실패)
+  - KRX 원본 컬럼 직접 파싱: ISU_SRT_CD, ISU_ABBRV, ACC_TRDVAL
+  - 버전 무관하게 안정적
 
 Changes from v2.4:
   - 스캔일 거래대금 계산 방식 수정: acml_tr_pbmn(연간 누적값) → 종가×거래량(단일 거래일)
@@ -58,7 +58,7 @@ MOCK_APP_SECRET = os.getenv("KIS_MOCK_APP_SECRET")
 ACCOUNT_NO      = os.getenv("KIS_ACCOUNT_NO")
 
 print("=" * 60)
-print("AlgoRich Backfill v2.6  |  DRY_RUN={} NAVER_ONLY={} OVERWRITE={}".format(DRY_RUN, NAVER_ONLY, OVERWRITE))
+print("AlgoRich Backfill v2.7  |  DRY_RUN={} NAVER_ONLY={} OVERWRITE={}".format(DRY_RUN, NAVER_ONLY, OVERWRITE))
 print("REAL_KEY: {}".format("OK" if REAL_APP_KEY else "MISSING"))
 print("MOCK_KEY: {}".format("OK" if MOCK_APP_KEY else "MISSING"))
 print("ACCOUNT:  {}".format("OK" if ACCOUNT_NO  else "MISSING"))
@@ -84,48 +84,49 @@ print()
 # ── pykrx 거래대금 순위 함수 ─────────────────────────────────────────────
 def get_top_by_amount_pykrx(date_str, top_n=40):
     """
-    pykrx get_market_ohlcv_by_ticker 사용 (v2.6).
-    - 반환 DataFrame: 인덱스='티커', 컬럼=['시가','고가','저가','종가','거래량','거래대금','등락률']
-    - get_market_cap_by_ticker는 pykrx 최신 버전에서 컬럼명 불일치 오류 발생하므로 사용하지 않음
+    pykrx 내부 전종목시세 클래스 직접 사용 (v2.7).
+    상위 API(get_market_ohlcv_by_ticker 등)는 pykrx 버전에 따라
+    내부 컬럼명 변환이 실패하므로 사용하지 않음.
+    KRX 원본 컬럼: ISU_SRT_CD(코드), ISU_ABBRV(종목명), ACC_TRDVAL(거래대금/원)
+    mktId: STK=KOSPI, KSQ=KOSDAQ
     """
     try:
-        from pykrx import stock as pykrx_stock
+        from pykrx.website.krx.market.core import SiSeByTicker as KRX전종목시세
     except ImportError:
-        print("[WARN] pykrx 미설치.")
-        return []
+        try:
+            from pykrx.website.krx.market.core import 전종목시세 as KRX전종목시세
+        except ImportError:
+            print("[WARN] pykrx 미설치.")
+            return []
 
+    market_ids = {"KOSPI": "STK", "KOSDAQ": "KSQ"}
     results = []
     seen    = set()
 
-    for market in ["KOSPI", "KOSDAQ"]:
+    for market, mktid in market_ids.items():
         try:
-            # get_market_ohlcv_by_ticker: 인덱스=티커, 컬럼에 '거래대금' 포함 (안정적)
-            df = pykrx_stock.get_market_ohlcv_by_ticker(date_str, market=market)
+            df = KRX전종목시세().fetch(date_str, mktid)
             if df is None or df.empty:
                 print("[WARN] pykrx {} 데이터 없음 (휴장일?)".format(market))
                 continue
 
-            # 인덱스(티커)를 컬럼으로
-            df = df.reset_index()
-
-            # 컬럼명 표준화 — '티커' or 첫 번째 컬럼 → code, '거래대금' → amount
-            idx_col = df.columns[0]  # 보통 '티커'
-            if '거래대금' not in df.columns:
-                print("[WARN] pykrx {} 거래대금 컬럼 없음: {}".format(market, list(df.columns)))
+            required = {"ISU_SRT_CD", "ISU_ABBRV", "ACC_TRDVAL"}
+            if not required.issubset(set(df.columns)):
+                print("[WARN] pykrx {} 컬럼 부재: {}".format(market, list(df.columns)))
                 continue
 
             for _, row in df.iterrows():
-                code = str(row[idx_col]).zfill(6)
-                if code in seen:
+                code = str(row["ISU_SRT_CD"]).strip().zfill(6)
+                if not code or code in seen:
                     continue
-                amt = int(row.get("거래대금", 0) or 0)
+                name = str(row["ISU_ABBRV"]).strip()
+                amt_str = str(row["ACC_TRDVAL"]).replace(",", "").strip()
+                try:
+                    amt = int(amt_str)
+                except ValueError:
+                    continue
                 if amt <= 0:
                     continue
-                try:
-                    name = pykrx_stock.get_market_ticker_name(code)
-                except Exception:
-                    name = code
-
                 if not _is_etf_etn(code, name):
                     results.append({"code": code, "name": name, "amount": amt})
                     seen.add(code)
