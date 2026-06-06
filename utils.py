@@ -16,11 +16,13 @@ class _TimeoutHTTPAdapter(requests.adapters.HTTPAdapter):
 MAIN_DB_ID = "1DsinKhffeQBwP-_KjryGkfyAo8HpNbCWOtAuZx-iiK4"
 LOG_DB_ID = "1rf4ppPSqYlM9-dr1WcFpHl3g-mCeWzl4xlibZ1OnBbY"
 
+_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trade_log.txt")
+
 def write_log(message):
     now_str = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
     log_msg = f"{now_str} {message}"
     print(log_msg)
-    with open("trade_log.txt", "a", encoding="utf-8") as f:
+    with open(_LOG_PATH, "a", encoding="utf-8") as f:
         f.write(log_msg + "\n")
 
 class GoogleSheetsManager:
@@ -76,12 +78,15 @@ class GoogleSheetsManager:
             worksheet.append_row(["날짜", "종목코드", "종목명", "종가", "상승률 (%)", "거래대금 (억)", "거래대금 순위", "비고", "거래량비(%)"])
             return worksheet
 
-    def log_lead_stock(self, date_str, ticker, name, close_price, change_rate, amt_100m, rank, remark, vol_ratio=0):
+    def log_lead_stock(self, date_str, ticker, name, close_price, change_rate, amt_100m, rank, remark, vol_ratio=0,
+                       leader_score=None, leader_grade=None):
         if not self.initialized: return False
         log_key = (date_str, ticker)
         if log_key in self.logged_today: return False
 
-        row = [date_str, ticker, name, int(close_price), float(change_rate), int(amt_100m), int(rank), remark, round(float(vol_ratio), 1)]
+        score_col = int(leader_score) if leader_score is not None else ""
+        grade_col = str(leader_grade) if leader_grade is not None else ""
+        row = [date_str, ticker, name, int(close_price), float(change_rate), int(amt_100m), int(rank), remark, round(float(vol_ratio), 1), score_col, grade_col]
         for attempt in range(3):
             try:
                 lead_sheet = self.get_log_sheet("0_주도주_Log")
@@ -95,40 +100,56 @@ class GoogleSheetsManager:
 
     def get_past_lead_stocks(self, days_ago_list=[1, 2]):
         """
-        1~2일 전 주도주로 찍혔던 종목의 코드를 반환합니다.
+        과거 주도주 종목 코드 반환.
+
+        days_ago_list 해석 (모두 양의 정수):
+          1 → 오늘 제외 가장 최근 날짜 (어제)
+          2 → 두 번째 최근 날짜 (그제)
+          0은 사용 불가 (-0 == 0 이므로 최고(最古) 날짜가 선택됨)
+
+        get_all_records() 대신 get_all_values() 사용:
+          → 헤더 행에 빈 컬럼('')이 중복되어도 예외 없이 동작
+          → 컬럼 인덱스 기반 파싱 (날짜=0, 종목코드=1, 종목명=2)
         """
-        if not self.initialized: return []
+        if not self.initialized:
+            return []
         try:
             lead_sheet = self.get_log_sheet("0_주도주_Log")
-            records = lead_sheet.get_all_records()
-            
-            target_dates = []
-            now = datetime.now()
-            import pandas as pd # To easily calculate business days if needed, but simple subtraction for now
-            # To handle weekends, we can just grab all unique dates sorted and pick the last 2 before today
-            
-            dates = set([str(r.get("날짜", "")) for r in records if r.get("날짜", "")])
-            sorted_dates = sorted(list(dates))
-            
-            # exclude today
-            today_str = now.strftime("%Y-%m-%d")
-            valid_dates = [d for d in sorted_dates if d < today_str]
-            
-            # get the last N valid dates
-            selected_dates = []
+            all_values = lead_sheet.get_all_values()  # 헤더 중복 오류 없음
+
+            if len(all_values) <= 1:  # 헤더만 있거나 비어있으면
+                return []
+
+            data_rows = all_values[1:]  # 헤더 행 제외
+
+            today_str = datetime.now().strftime("%Y-%m-%d")
+
+            # 오늘 이전 날짜만 수집 (정렬)
+            dates = sorted({
+                row[0] for row in data_rows
+                if len(row) > 0 and row[0] and row[0] < today_str
+            })
+
+            # days_ago_list의 각 값 d → dates[-d] (d는 반드시 양의 정수)
+            selected_dates = set()
             for d in days_ago_list:
-                if len(valid_dates) >= d:
-                    selected_dates.append(valid_dates[-d])
-                    
+                if d > 0 and len(dates) >= d:
+                    selected_dates.add(dates[-d])
+
             past_stocks = []
-            for r in records:
-                if str(r.get("날짜", "")) in selected_dates:
-                    # 종목코드 컬럼이 있으면 우선 사용, 없으면 종목명만 반환 (불안정할 수 있으나 호환성)
-                    code = str(r.get("종목코드", "")).zfill(6) if r.get("종목코드") else None
-                    name = str(r.get("종목명", ""))
-                    if code and code != "000000":
-                        past_stocks.append({"code": code, "name": name, "date": str(r.get("날짜", ""))})
-                        
+            seen = set()
+            for row in data_rows:
+                if len(row) < 3:
+                    continue
+                date_val = row[0]
+                code_val  = str(row[1]).zfill(6) if row[1] else ""
+                name_val  = row[2]
+                if date_val in selected_dates and code_val and code_val != "000000":
+                    key = (code_val, date_val)
+                    if key not in seen:
+                        past_stocks.append({"code": code_val, "name": name_val, "date": date_val})
+                        seen.add(key)
+
             return past_stocks
         except Exception as e:
             write_log(f"과거 주도주 조회 실패: {e}")
