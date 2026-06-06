@@ -70,12 +70,27 @@ class GoogleSheetsManager:
             ])
             return worksheet
 
+    # 0_주도주_Log 표준 헤더 (log_lead_stock 쓰기 순서와 1:1 일치)
+    LOG_SHEET_HEADER = [
+        "날짜",           # [0]  date_str
+        "종목코드",        # [1]  ticker
+        "종목명",          # [2]  name
+        "종가",            # [3]  close_price
+        "상승률 (%)",      # [4]  change_rate
+        "거래대금 (억)",   # [5]  amt_100m
+        "거래대금 순위",   # [6]  rank
+        "비고",            # [7]  remark
+        "거래량비 (%)",    # [8]  vol_ratio
+        "Leader Score",   # [9]  leader_score
+        "Grade",          # [10] leader_grade
+    ]
+
     def get_log_sheet(self, tab_name="0_주도주_Log"):
         try:
             return self.log_wb.worksheet(tab_name)
         except gspread.exceptions.WorksheetNotFound:
-            worksheet = self.log_wb.add_worksheet(title=tab_name, rows=1000, cols=10)
-            worksheet.append_row(["날짜", "종목코드", "종목명", "종가", "상승률 (%)", "거래대금 (억)", "거래대금 순위", "비고", "거래량비(%)"])
+            worksheet = self.log_wb.add_worksheet(title=tab_name, rows=1000, cols=12)
+            worksheet.append_row(self.LOG_SHEET_HEADER)
             return worksheet
 
     def log_lead_stock(self, date_str, ticker, name, close_price, change_rate, amt_100m, rank, remark, vol_ratio=0,
