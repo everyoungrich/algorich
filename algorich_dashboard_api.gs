@@ -412,8 +412,9 @@ function getStockInfo(code) {
   var warnLabel = { '00':'', '01':'투자주의', '02':'투자경고',
                     '03':'투자위험', '04':'투자위험예고',
                     '05':'단기과열', '06':'단기과열예고' }[warnCode] || '';
-  // 관리종목 여부: mang_issu_cls_code '0'일반 '1'관리
-  var isMgmt = String(pd.mang_issu_cls_code || '0') !== '0';
+  // 관리종목 여부: mang_issu_cls_code 'N'=일반, 'Y'=관리종목
+  // ※ 실제 API 응답 확인 결과 '0'/'1' 아닌 'N'/'Y' 체계 사용
+  var isMgmt = String(pd.mang_issu_cls_code || 'N') === 'Y';
 
   return {
     // ── 데이터 기준일 ──
@@ -423,7 +424,9 @@ function getStockInfo(code) {
     price:        toNum(pd.stck_prpr),
     priceChange:  toNum(pd.prdy_vrss)     * chgMult,
     changeRate:   toNum(pd.prdy_ctrt)     * chgMult,
-    prevClose:    toNum(pd.stck_prdy_clpr),
+    // stck_prdy_clpr 는 이 API에서 반환되지 않음
+    // stck_sdpr(기준가) = 전일종가와 동일값 사용
+    prevClose:    toNum(pd.stck_prdy_clpr || pd.stck_sdpr),
     open:         toNum(pd.stck_oprc),
     high:         toNum(pd.stck_hgpr),
     low:          toNum(pd.stck_lwpr),
