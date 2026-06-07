@@ -792,11 +792,11 @@ function showSection(sec) {
 
 // ── 신호 점수 ─────────────────────────────────────────────────
 function calcScore(r) {
-    const rate = r.changeRate || 0, amt = r.scan_amt_100m || 0, rank = r.rank || 40;
+    if (r.leaderScore && r.leaderScore > 0) return r.leaderScore;
+    const rate = r.changeRate || 0, amt = r.scan_amt_100m || 0;
     const rs = Math.min(50, Math.max(0, (rate - 10) * 2.5));
     const as = Math.min(30, amt / 167);
-    const ks = Math.max(0, 20 - (rank - 1) * 0.5);
-    return Math.round(rs + as + ks);
+    return Math.round(rs + as);
 }
 function scoreBadge(s) {
     const cls = s >= 70 ? 'sc-s' : s >= 50 ? 'sc-a' : 'sc-b';
@@ -964,20 +964,21 @@ function _renderMonthContent(month) {
         const group = [...grouped.get(date)].sort((a,b) => (b.scan_amt_100m||0) - (a.scan_amt_100m||0));
         const topScore = Math.max(...group.map(r => calcScore(r)));
         const rowsHtml = group.map(r => {
-            const rate  = r.changeRate || 0, price = r.close || 0;
+            const rate  = r.changeRate || 0;
             const cls   = rate >= 0 ? 'up' : 'down';
             const code  = esc(String(r.code||'').replace(/[^0-9A-Za-z]/g,''));
             const name  = esc(r.name||'');
             const sc    = calcScore(r);
             const sector = getSector(r.name||'');
             const secTag = sector ? '<span class="sec-tag">' + sector + '</span>' : '';
+            const nhTag  = r.isNewHigh === 'Y' ? '<span style="color:var(--gold);font-size:10px">52주↑</span>' : '';
             const isHolding = _holdingsMap[code] ? '<span style="color:var(--gold);font-size:10px">★보유</span>' : '';
-            return '<tr class="lead-row" data-code="' + code + '" data-name="' + name + '" data-price="' + price + '" data-rate="' + rate + '" data-amt="' + (r.scan_amt_100m||0) + '" data-date="' + esc(r.date||'') + '">' +
+            return '<tr class="lead-row" data-code="' + code + '" data-name="' + name + '" data-price="0" data-rate="' + rate + '" data-amt="' + (r.scan_amt_100m||0) + '" data-date="' + esc(r.date||'') + '">' +
                 '<td><div>' + name + ' ' + scoreBadge(sc) + ' ' + isHolding + '</div>' +
-                '<div class="sub-text">' + code + secTag + '</div></td>' +
+                '<div class="sub-text">' + code + secTag + nhTag + '</div></td>' +
                 '<td><span class="' + cls + '">' + fmtPct(rate) + '</span></td>' +
                 '<td style="color:var(--sub);font-size:11px">' + fmtAmt(r.scan_amt_100m) + '</td>' +
-                '<td>' + fmtNum(price) + '원</td></tr>';
+                '<td style="color:var(--sub);font-size:11px">' + (r.volRatio||0).toFixed(0) + '%</td></tr>';
         }).join('');
         return '<div class="date-group">' +
             '<div class="dg-hdr">📅 ' + esc(date) + ' · ' + group.length + '종목' +
@@ -1032,7 +1033,7 @@ const STRAT_INFO = {
                 return { ...r, conds: {
                     c1: 'ok',
                     c2: (r.changeRate||0) >= 5.0 ? 'ok' : 'no',
-                    c3: (r.rank||99) <= 20 ? 'ok' : 'no',
+                    c3: r.isNewHigh === 'Y' ? 'ok' : 'no',
                     c4: 'na',
                 }};
             }).filter(r => r.conds.c2 === 'ok' && r.conds.c3 === 'ok');
