@@ -70,6 +70,11 @@ function doGet(e) {
 
 // ============================================================
 // 주도주 Log 반환
+//
+// 0_주도주_Log 컬럼 구조 (v2 — 9컬럼):
+//   [0] 날짜  [1] 종목코드  [2] 종목명
+//   [3] 거래대금(억)  [4] 등락률(%)  [5] 거래량비(%)
+//   [6] 52주신고가(Y/N)  [7] LeaderScore  [8] 비고
 // ============================================================
 function getLeadStocks() {
   var sheet = SpreadsheetApp.openById(LOG_DB_ID).getSheetByName(LOG_SHEET_NAME);
@@ -80,15 +85,15 @@ function getLeadStocks() {
 
   return values.slice(1).slice(-2000).map(function(r) {
     return {
-      date:       formatCell(r[0]),
-      code:       String(r[1] || '').padStart(6, '0'),
-      name:       String(r[2] || ''),
-      close:      toNum(r[3]),
-      changeRate: toNum(r[4]),
-      amt:        toNum(r[5]),
-      rank:       toNum(r[6]),
-      remark:     String(r[7] || ''),
-      volRatio:   toNum(r[8] || 0)   // 거래량비(%) — 구버전 행은 0 반환
+      date:          formatCell(r[0]),
+      code:          String(r[1] || '').padStart(6, '0'),
+      name:          String(r[2] || ''),
+      scan_amt_100m: toNum(r[3]),          // 거래대금(억)
+      changeRate:    toNum(r[4]),          // 등락률(%)
+      volRatio:      toNum(r[5] || 0),     // 거래량비(%)
+      isNewHigh:     String(r[6] || ''),   // 52주신고가 Y/N
+      leaderScore:   toNum(r[7] || 0),     // LeaderScore
+      remark:        String(r[8] || '')    // 비고
     };
   });
 }
@@ -424,8 +429,8 @@ function getStockInfo(code) {
     low:          toNum(pd.stck_lwpr),
 
     // ── 거래량/대금 ──
-    volume:       toNum(pd.acml_vol),
-    tradingValue: toNum(pd.acml_tr_pbmn), // 원 단위
+    volume:           toNum(pd.acml_vol),
+    current_amt_100m: pd.acml_tr_pbmn ? Math.floor(toNum(pd.acml_tr_pbmn) / 1e8) : 0, // 현재 기준일 거래대금 (억)
 
     // ── 52주 ──
     high52w:      toNum(pd.w52_hgpr),

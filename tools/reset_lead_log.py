@@ -30,9 +30,8 @@ sys.path.insert(0, BASE_DIR)
 from utils import GoogleSheetsManager
 
 CORRECT_HEADER = [
-    "날짜", "종목코드", "종목명", "종가", "상승률 (%)",
-    "거래대금 (억)", "거래대금 순위", "비고", "거래량비 (%)",
-    "Leader Score", "Grade",
+    "날짜", "종목코드", "종목명", "거래대금(억)",
+    "등락률(%)", "거래량비(%)", "52주신고가", "LeaderScore", "비고",
 ]
 
 print("\n[1/3] Google Sheets 연결 중...")
@@ -71,7 +70,7 @@ if DRY_RUN:
 print("\n" + "=" * 55)
 print("WARNING: 0_주도주_Log 시트를 초기화합니다.")
 print("  - {}행 삭제".format(len(data_rows)))
-print("  - 11컬럼 헤더로 교체: {}".format(CORRECT_HEADER))
+print("  - 9컬럼 헤더로 교체: {}".format(CORRECT_HEADER))
 print("  - 백업: {}".format(backup_file))
 print("=" * 55)
 confirm = input("계속하려면 'yes' 입력: ").strip().lower()
@@ -85,6 +84,6 @@ sheet.append_row(CORRECT_HEADER)
 
 print("\n결과:")
 print("  OK 백업: {} ({}행)".format(backup_file, len(data_rows)))
-print("  OK 시트: 11컬럼 헤더로 초기화 완료")
+print("  OK 시트: 9컬럼 헤더로 초기화 완료")
 print("  OK 헤더: {}".format(CORRECT_HEADER))
 print("  OK 월요일 08:00 실시간 스캔 시작 예정")
