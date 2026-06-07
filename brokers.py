@@ -512,7 +512,12 @@ class KISBroker(BaseBroker):
                           f"최근 영업일({market_date}) != 오늘({date_label}).")
                 return []
 
-        candidates = []
+        # ── 1차 필터: 동전주/거래량/등락률 ── audit 수집 병행 ──────────
+        audit_map   = {}  # code -> audit entry
+        cnt_10pct   = 0   # 등락 ≥ 10%
+        cnt_200vol  = 0   # vol ≥ 200% AND 등락 ≥ 10%
+        candidates  = []
+
         for mkt_rank, item in enumerate(raw_list, start=1):
             code  = item.get("mksc_shrn_iscd", "")
             name  = item.get("hts_kor_isnm", "")
@@ -528,7 +533,7 @@ class KISBroker(BaseBroker):
 
             vol_rate      = float(item.get("vol_inrt", 0))
             price_rate    = float(item.get("prdy_ctrt", 0))
-            scan_amt_100m_filter = int(amt / 100_000_000)  # 1차 필터 로그용
+            scan_amt_100m_filter = int(amt / 100_000_000)
 
             fail_reason = ""
             if price < 1000:
@@ -543,7 +548,23 @@ class KISBroker(BaseBroker):
                       f"거래대금:{scan_amt_100m_filter}억 "
                       f"-> {'PASS' if not fail_reason else 'FAIL:' + fail_reason}")
 
-            if price >= 1000 and vol_rate >= 200.0 and price_rate >= 10.0:
+            # 카운트
+            if price_rate >= 10.0:
+                cnt_10pct += 1
+            if not fail_reason:
+                cnt_200vol += 1
+
+            # audit entry 초기화
+            audit_map[code] = {
+                "code": code, "name": name,
+                "amt_100m": scan_amt_100m_filter,
+                "change_rate": price_rate, "vol_ratio": vol_rate,
+                "new_high": "-", "leader_score": "-",
+                "result": "PASS" if not fail_reason else "FAIL",
+                "fail_reason": fail_reason,
+            }
+
+            if not fail_reason:
                 candidates.append({
                     "code": code, "name": name, "price": price, "amt": amt,
                     "vol_rate": vol_rate, "price_rate": price_rate, "mkt_rank": mkt_rank,
@@ -553,6 +574,8 @@ class KISBroker(BaseBroker):
         write_log(f"[필터 통과] vol>=200%+등락>=10%+1000원: "
                   f"{len(candidates)}종목 -> 52주 신고가 검증 시작")
 
+        # ── 2차 필터: 52주 신고가 ─────────────────────────────────────────
+        cnt_52wk    = 0
         s_class_list = []
         for cand in candidates:
             code       = cand["code"]
@@ -562,6 +585,9 @@ class KISBroker(BaseBroker):
             mkt_rank   = cand.get("mkt_rank", 0)
             daily_info = self.get_daily_prices(code, count=260, end_date=target_date)
             if len(daily_info) < 250:
+                if code in audit_map:
+                    audit_map[code]["result"]      = "FAIL"
+                    audit_map[code]["fail_reason"]  = "일봉 데이터 부족"
                 continue
 
             df = pd.DataFrame(daily_info)[::-1].reset_index(drop=True)
@@ -569,32 +595,37 @@ class KISBroker(BaseBroker):
                 df[["stck_clpr", "stck_hgpr", "acml_tr_pbmn", "acml_vol"]]
                 .apply(pd.to_numeric)
             )
+            is_new_high = self.is_s_class_target(df)
 
-            if self.is_s_class_target(df):
-                curr           = df.iloc[-1]
-                prev           = df.iloc[-2]
-                change_rate    = (curr["clpr"] - prev["clpr"]) / prev["clpr"] * 100
-                scan_amt_100m  = int(curr["amt"] / 100_000_000)  # 스캔일 거래대금 (억)
+            if code in audit_map:
+                audit_map[code]["new_high"] = "Y" if is_new_high else "N"
 
-                # Leader Score 계산
+            if is_new_high:
+                cnt_52wk += 1
+                curr          = df.iloc[-1]
+                prev          = df.iloc[-2]
+                change_rate   = (curr["clpr"] - prev["clpr"]) / prev["clpr"] * 100
+                scan_amt_100m = int(curr["clpr"] * df.iloc[-1]["vol"] / 100_000_000)
+
                 inst_net = self.get_inst_net_amount(code)
                 ls = calculate_leader_score(
-                    daily_df=df,
-                    vol_inrt=vol_rate,
-                    prdy_ctrt=price_rate,
-                    amt_100m=scan_amt_100m,
-                    inst_net_pbmn=inst_net,
+                    daily_df=df, vol_inrt=vol_rate, prdy_ctrt=price_rate,
+                    amt_100m=scan_amt_100m, inst_net_pbmn=inst_net,
                 )
                 write_log(format_score_log(code, name, ls))
 
+                if code in audit_map:
+                    audit_map[code]["leader_score"] = ls["score"]
+                    audit_map[code]["amt_100m"]     = scan_amt_100m
+                    audit_map[code]["result"]        = "PASS"
+                    audit_map[code]["fail_reason"]   = ""
+
                 if self.gs_manager:
                     is_logged = self.gs_manager.log_lead_stock(
-                        log_date_str, code, name, curr["clpr"],
-                        round(change_rate, 2), scan_amt_100m, mkt_rank,
-                        "S-Class 주도주 포착",
-                        vol_ratio=vol_rate,
-                        leader_score=ls["score"],
-                        leader_grade=ls["grade"],
+                        log_date_str, code, name,
+                        scan_amt_100m, round(change_rate, 2), vol_rate,
+                        is_new_high=True, leader_score=ls["score"],
+                        remark="S-Class",
                     )
                     if is_logged:
                         write_log(f"[S-Class 확정] {name}({code}) "
@@ -604,8 +635,25 @@ class KISBroker(BaseBroker):
                                   f"Leader Score:{ls['score']}점({ls['grade']}) "
                                   f"- 시트 기록 완료.")
                 s_class_list.append(cand)
+            else:
+                if code in audit_map:
+                    audit_map[code]["result"]      = "FAIL"
+                    audit_map[code]["fail_reason"]  = "52주 신고가 미충족"
 
             time.sleep(0.2)
+
+        # ── Audit / Summary 기록 ───────────────────────────────────────────
+        if self.gs_manager:
+            self.gs_manager.log_audit_batch(log_date_str, list(audit_map.values()))
+            self.gs_manager.log_scan_summary(
+                log_date_str,
+                cnt_top30=len(raw_list),
+                cnt_etf_excl=len(raw_list),
+                cnt_10pct=cnt_10pct,
+                cnt_200vol=cnt_200vol,
+                cnt_52wk=cnt_52wk,
+                cnt_selected=len(s_class_list),
+            )
 
         write_log(f"S-Class 주도주 스캐닝 완료 ({log_date_str}): "
                   f"총 {len(s_class_list)} 종목 발굴")

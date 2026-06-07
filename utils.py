@@ -70,38 +70,60 @@ class GoogleSheetsManager:
             ])
             return worksheet
 
-    # 0_주도주_Log 표준 헤더 (log_lead_stock 쓰기 순서와 1:1 일치)
+    # ── 시트 헤더 ───────────────────────────────────────────────────────
     LOG_SHEET_HEADER = [
-        "날짜",           # [0]  date_str
-        "종목코드",        # [1]  ticker
-        "종목명",          # [2]  name
-        "종가",            # [3]  close_price
-        "상승률 (%)",      # [4]  change_rate
-        "거래대금 (억)",   # [5]  amt_100m
-        "거래대금 순위",   # [6]  rank
-        "비고",            # [7]  remark
-        "거래량비 (%)",    # [8]  vol_ratio
-        "Leader Score",   # [9]  leader_score
-        "Grade",          # [10] leader_grade
+        "날짜", "종목코드", "종목명", "거래대금(억)",
+        "등락률(%)", "거래량비(%)", "52주신고가", "LeaderScore", "비고",
+    ]
+    AUDIT_SHEET_HEADER = [
+        "날짜", "종목코드", "종목명", "거래대금(억)",
+        "거래대금30위", "등락률(%)", "등락률10%통과",
+        "거래량비(%)", "거래량200%통과", "52주신고가",
+        "LeaderScore", "최종결과", "탈락사유",
+    ]
+    SUMMARY_SHEET_HEADER = [
+        "날짜", "거래대금30위", "ETF제외후",
+        "10%상승통과", "거래량200%통과", "52주신고가통과", "최종선정",
     ]
 
     def get_log_sheet(self, tab_name="0_주도주_Log"):
         try:
             return self.log_wb.worksheet(tab_name)
         except gspread.exceptions.WorksheetNotFound:
-            worksheet = self.log_wb.add_worksheet(title=tab_name, rows=1000, cols=12)
-            worksheet.append_row(self.LOG_SHEET_HEADER)
-            return worksheet
+            ws = self.log_wb.add_worksheet(title=tab_name, rows=2000, cols=10)
+            ws.append_row(self.LOG_SHEET_HEADER)
+            return ws
 
-    def log_lead_stock(self, date_str, ticker, name, close_price, change_rate, amt_100m, rank, remark, vol_ratio=0,
-                       leader_score=None, leader_grade=None):
-        if not self.initialized: return False
+    def get_audit_sheet(self):
+        try:
+            return self.log_wb.worksheet("1_Scan_Audit_Log")
+        except gspread.exceptions.WorksheetNotFound:
+            ws = self.log_wb.add_worksheet(title="1_Scan_Audit_Log", rows=5000, cols=14)
+            ws.append_row(self.AUDIT_SHEET_HEADER)
+            return ws
+
+    def get_summary_sheet(self):
+        try:
+            return self.log_wb.worksheet("2_Scan_Summary_Log")
+        except gspread.exceptions.WorksheetNotFound:
+            ws = self.log_wb.add_worksheet(title="2_Scan_Summary_Log", rows=1000, cols=8)
+            ws.append_row(self.SUMMARY_SHEET_HEADER)
+            return ws
+    def log_lead_stock(self, date_str, ticker, name, amt_100m, change_rate, vol_ratio,
+                       is_new_high, leader_score=None, remark="S-Class"):
+        """0_주도주_Log: 최종 S-Class 선정 종목 기록."""
+        if not self.initialized:
+            return False
         log_key = (date_str, ticker)
-        if log_key in self.logged_today: return False
-
-        score_col = int(leader_score) if leader_score is not None else ""
-        grade_col = str(leader_grade) if leader_grade is not None else ""
-        row = [date_str, ticker, name, int(close_price), float(change_rate), int(amt_100m), int(rank), remark, round(float(vol_ratio), 1), score_col, grade_col]
+        if log_key in self.logged_today:
+            return False
+        row = [
+            date_str, ticker, name,
+            int(amt_100m), round(float(change_rate), 2), round(float(vol_ratio), 1),
+            "Y" if is_new_high else "N",
+            int(leader_score) if leader_score is not None else "",
+            remark,
+        ]
         for attempt in range(3):
             try:
                 lead_sheet = self.get_log_sheet("0_주도주_Log")
@@ -113,63 +135,78 @@ class GoogleSheetsManager:
                 time.sleep(10)
         return False
 
+    def log_audit_batch(self, date_str, audit_entries):
+        """1_Scan_Audit_Log: 스캔 30종목 전체 배치 기록."""
+        if not self.initialized or not audit_entries:
+            return
+        try:
+            sheet = self.get_audit_sheet()
+            rows = []
+            for e in audit_entries:
+                chg = float(e.get("change_rate", 0))
+                vol = float(e.get("vol_ratio", 0))
+                rows.append([
+                    date_str, e.get("code",""), e.get("name",""),
+                    e.get("amt_100m",""), "Y",
+                    round(chg,2), "Y" if chg>=10.0 else "N",
+                    round(vol,1), "Y" if vol>=200.0 else "N",
+                    e.get("new_high","-"), e.get("leader_score","-"),
+                    e.get("result",""), e.get("fail_reason",""),
+                ])
+            sheet.append_rows(rows, value_input_option='USER_ENTERED')
+        except Exception as ex:
+            write_log(f"[log_audit_batch 오류] {repr(ex)}")
+
+    def log_scan_summary(self, date_str, cnt_top30, cnt_etf_excl,
+                         cnt_10pct, cnt_200vol, cnt_52wk, cnt_selected):
+        """2_Scan_Summary_Log: 일별 단계 카운트 기록."""
+        if not self.initialized:
+            return
+        try:
+            sheet = self.get_summary_sheet()
+            sheet.append_row(
+                [date_str, cnt_top30, cnt_etf_excl,
+                 cnt_10pct, cnt_200vol, cnt_52wk, cnt_selected],
+                value_input_option='USER_ENTERED'
+            )
+        except Exception as ex:
+            write_log(f"[log_scan_summary 오류] {repr(ex)}")
     def get_past_lead_stocks(self, days_ago_list=[1, 2]):
-        """
-        과거 주도주 종목 코드 반환.
-
-        days_ago_list 해석 (모두 양의 정수):
-          1 → 오늘 제외 가장 최근 날짜 (어제)
-          2 → 두 번째 최근 날짜 (그제)
-          0은 사용 불가 (-0 == 0 이므로 최고(最古) 날짜가 선택됨)
-
-        get_all_records() 대신 get_all_values() 사용:
-          → 헤더 행에 빈 컬럼('')이 중복되어도 예외 없이 동작
-          → 컬럼 인덱스 기반 파싱 (날짜=0, 종목코드=1, 종목명=2)
-        """
+        """과거 주도주 종목 코드 반환. get_all_values() 사용 → 헤더 중복 무관."""
         if not self.initialized:
             return []
         try:
             lead_sheet = self.get_log_sheet("0_주도주_Log")
-            all_values = lead_sheet.get_all_values()  # 헤더 중복 오류 없음
-
-            if len(all_values) <= 1:  # 헤더만 있거나 비어있으면
+            all_values = lead_sheet.get_all_values()
+            if len(all_values) <= 1:
                 return []
-
-            data_rows = all_values[1:]  # 헤더 행 제외
-
+            data_rows = all_values[1:]
             today_str = datetime.now().strftime("%Y-%m-%d")
-
-            # 오늘 이전 날짜만 수집 (정렬)
             dates = sorted({
                 row[0] for row in data_rows
                 if len(row) > 0 and row[0] and row[0] < today_str
             })
-
-            # days_ago_list의 각 값 d → dates[-d] (d는 반드시 양의 정수)
             selected_dates = set()
             for d in days_ago_list:
                 if d > 0 and len(dates) >= d:
                     selected_dates.add(dates[-d])
-
             past_stocks = []
             seen = set()
             for row in data_rows:
                 if len(row) < 3:
                     continue
                 date_val = row[0]
-                code_val  = str(row[1]).zfill(6) if row[1] else ""
-                name_val  = row[2]
+                code_val = str(row[1]).zfill(6) if row[1] else ""
+                name_val = row[2]
                 if date_val in selected_dates and code_val and code_val != "000000":
                     key = (code_val, date_val)
                     if key not in seen:
                         past_stocks.append({"code": code_val, "name": name_val, "date": date_val})
                         seen.add(key)
-
             return past_stocks
         except Exception as e:
             write_log(f"과거 주도주 조회 실패: {e}")
             return []
-
     def log_buy(self, trade_id, code, name, price, qty, strategy_type="1D_RB", mode="모의"):
         if not self.initialized: return
         now_str = datetime.now().strftime("%Y-%m-%d")
