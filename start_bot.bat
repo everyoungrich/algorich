@@ -1,19 +1,19 @@
 @echo off
-:: AlgoRich NH-Sniper 자동매매 봇 런처
-:: Windows Task Scheduler가 평일 08:00에 이 파일을 실행합니다
+rem AlgoRich NH-Sniper bot launcher
+rem Task Scheduler runs this Mon-Fri 08:00 (ASCII + CRLF only - do not save as UTF-8/LF)
 
 cd /d C:\Algorich
+title AlgoRich_Bot
 
-:: 이미 실행 중이면 중복 실행 방지
-tasklist /FI "IMAGENAME eq python.exe" /FI "WINDOWTITLE eq AlgoRich*" 2>NUL | find /I "python.exe" >NUL
-if %ERRORLEVEL% EQU 0 (
-    echo [%DATE% %TIME%] AlgoRich bot already running. Skipping. >> C:\Algorich\start_bot.log
-    exit /b 0
-)
+rem Skip if trader_final.py already running in an AlgoRich_Bot console
+tasklist /FI "IMAGENAME eq python.exe" /FI "WINDOWTITLE eq AlgoRich_Bot*" 2>NUL | find /I "python.exe" >NUL
+if not errorlevel 1 goto already
 
 echo [%DATE% %TIME%] AlgoRich bot starting... >> C:\Algorich\start_bot.log
+python trader_final.py >> C:\Algorich\start_bot_stdout.log 2>&1
+echo [%DATE% %TIME%] AlgoRich bot exited (code %ERRORLEVEL%). >> C:\Algorich\start_bot.log
+exit /b 0
 
-:: Python 실행 (출력을 trade_log.txt에 추가 기록)
-python trader_final.py >> C:\Algorich\trade_log.txt 2>&1
-
-echo [%DATE% %TIME%] AlgoRich bot exited. >> C:\Algorich\start_bot.log
+:already
+echo [%DATE% %TIME%] AlgoRich bot already running. Skipping. >> C:\Algorich\start_bot.log
+exit /b 0

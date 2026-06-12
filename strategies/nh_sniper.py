@@ -3,7 +3,7 @@ import sys
 import time
 import uuid
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from utils import write_log
 from .base import BaseStrategy
@@ -32,6 +32,10 @@ class NHSniperStrategy(BaseStrategy):
         self.has_executed_entry_check = False
         self.has_executed_entry_buy = False
         self.has_executed_s_class_scan = False
+
+        # 잔고 조회 연속 실패 백오프 (VTS 서버 오류 시 로그 폭주 방지)
+        self._balance_fail_count = 0
+        self._balance_pause_until = None
 
     def reset_daily_state(self):
         self.has_executed_morning_reset = False
@@ -69,7 +73,10 @@ class NHSniperStrategy(BaseStrategy):
         if len(daily_data) < 20:
             return False, "FAIL: LACK_OF_DATA"
 
-        df = self._to_df(daily_data, {'stck_clpr': 'clpr', 'acml_vol': 'vol'})
+        df = self._to_df(daily_data, {
+            'stck_clpr': 'clpr', 'acml_vol': 'vol',
+            'stck_hgpr': 'hgpr', 'stck_lwpr': 'lwpr'
+        })
 
         curr = df.iloc[-1]
         prev = df.iloc[-2]
@@ -77,10 +84,16 @@ class NHSniperStrategy(BaseStrategy):
         if prev['clpr'] <= 0 or curr['clpr'] <= 0:
             return False, "FAIL: PRICE_ZERO"
 
-        # [1] 등락률 3% 이하 (눌림)
-        change_rate = (curr['clpr'] - prev['clpr']) / prev['clpr'] * 100
-        if change_rate > 3.0:
-            return False, f"FAIL: CHANGE_RATE_HIGH ({change_rate:.2f}%)"
+        # [1] 캔들 범위 5% 이내 — (고가-저가)/저가 ≤ 5%
+        # 종가 등락률이 아닌 캔들 전체 범위로 판단: 위꼬리·아래꼬리 포함한 변동폭이 좁아야 함
+        # 기존 "종가 등락률 3% 이하" 대비 장중 급등락(긴 꼬리) 케이스도 올바르게 필터링
+        candle_range = 0.0
+        if curr['lwpr'] > 0:
+            candle_range = (curr['hgpr'] - curr['lwpr']) / curr['lwpr'] * 100
+            if candle_range > 5.0:
+                change_rate = (curr['clpr'] - prev['clpr']) / prev['clpr'] * 100
+                return False, (f"FAIL: CANDLE_WIDE ({candle_range:.2f}%)"
+                               f" 종가등락:{change_rate:+.2f}%")
 
         # [2] 거래량 전일비 50% 이하
         vol_ratio = 0.0
@@ -108,7 +121,9 @@ class NHSniperStrategy(BaseStrategy):
             else:
                 inst_note = f" 기관순매도:{abs(inst_eok):.0f}억⚠"
 
-        return True, f"OK (등락:{change_rate:.2f}% 거래량비:{vol_ratio:.1f}% MA5:{ma5:,.0f} MA20:{ma20:,.0f}{inst_note})"
+        change_rate = (curr['clpr'] - prev['clpr']) / prev['clpr'] * 100
+        return True, (f"OK (캔들범위:{candle_range:.2f}% 종가등락:{change_rate:+.2f}%"
+                      f" 거래량비:{vol_ratio:.1f}% MA5:{ma5:,.0f} MA20:{ma20:,.0f}{inst_note})")
 
     def check_ts_condition(self, code, daily_data):
         """
@@ -248,10 +263,22 @@ class NHSniperStrategy(BaseStrategy):
 
     def monitor_and_sell(self):
         """장 중 익절(+20%→50%) / 손절(-3%) 모니터링"""
+        # 연속 실패 백오프: 3회 연속 실패 시 5분간 호출 중단 (서버 부하·로그 폭주 방지)
+        if self._balance_pause_until and datetime.now() < self._balance_pause_until:
+            return
+
         _, tot_eval, holdings = self.broker.get_balance()
         if tot_eval is None:
-            write_log("[NH-Sniper] 잔고 조회 불가, 모니터링 유예")
+            self._balance_fail_count += 1
+            if self._balance_fail_count >= 3:
+                self._balance_pause_until = datetime.now() + timedelta(minutes=5)
+                write_log(f"[NH-Sniper] 잔고 조회 {self._balance_fail_count}회 연속 실패 → 5분간 모니터링 유예")
+            else:
+                write_log("[NH-Sniper] 잔고 조회 불가, 모니터링 유예")
             return
+
+        self._balance_fail_count = 0
+        self._balance_pause_until = None
 
         if self.daily_starting_eval == 0:
             self.daily_starting_eval = max(tot_eval, 1)
@@ -299,6 +326,11 @@ class NHSniperStrategy(BaseStrategy):
         # 자정 일일 초기화
         if now.hour == 0 and now.minute == 0 and now.second < 5:
             self.reset_daily_state()
+
+        # 주말 가드 — 토/일은 모든 동작 차단
+        # (VTS 모의서버 주말 비운영: 잔고 API가 SSL EOF/OPSQ0008로 실패해 로그 폭주했었음)
+        if now.weekday() >= 5:
+            return
 
         # 08:20 세션 초기화
         if now.hour == 8 and now.minute >= 20 and not self.has_executed_morning_reset:

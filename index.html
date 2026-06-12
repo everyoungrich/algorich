@@ -558,16 +558,6 @@
         <div id="scan-status-line" style="font-size:12px;color:var(--sub);margin-bottom:10px">데이터 로딩 중...</div>
         <div id="scan-audit-table"></div>
     </div>
-    <div class="section-title" style="margin-top:18px">
-        🗂 관심종목 등록 이력
-        <span class="cnt" id="scan-section-sub">— S-Class 4대 조건 충족 종목</span>
-    </div>
-    <div class="card">
-        <div class="month-tabs" id="month-tabs"></div>
-        <div id="lead-stock-table">
-            <div class="loading-state">데이터 로딩 중...</div>
-        </div>
-    </div>
 </div>
 
 <!-- ════════════════ SECTION: 전략 후보 ════════════════ -->
@@ -1031,6 +1021,7 @@ function renderLeadStocks(rows) {
     const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 6);
     _allLeadRows = rows.filter(r => r.date && r.date >= cutoff.toISOString().slice(0,10));
     const el = document.getElementById('lead-stock-table');
+    if (!el) return;  // 이력 섹션 제거됨(2026-06-12) — _allLeadRows 데이터 상태만 유지
     if (!_allLeadRows.length) {
         document.getElementById('month-tabs').innerHTML = '';
         el.innerHTML = '<div class="empty-state"><div class="em-icon">📭</div>기록된 데이터가 없습니다.</div>';

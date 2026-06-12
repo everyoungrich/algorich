@@ -11,7 +11,7 @@ socket.setdefaulttimeout(15.0)
 
 from utils import write_log, GoogleSheetsManager
 from brokers import KISBroker
-from strategies import NHSniperStrategy
+from strategies import NHSniperStrategy, OneDReboundStrategy
 
 # =====================================================================
 # [사용자 설정 섹션]
@@ -121,6 +121,15 @@ def build_broker(cfg, gs_manager):
 
 
 if __name__ == "__main__":
+    # 중복 실행 방지 (싱글톤 락): 동시 다중 실행 시 토큰 분당 1회 제한 충돌 +
+    # VTS 서버 연결 거부(SSL EOF)로 잔고 조회 오류가 폭주했던 사고 재발 방지 (2026-06-11)
+    _singleton_lock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        _singleton_lock.bind(("127.0.0.1", 54219))
+    except OSError:
+        print("[System] AlgoRich 봇이 이미 실행 중입니다. 중복 실행을 종료합니다.")
+        sys.exit(0)
+
     nh_cfg  = STRATEGY_CONFIG["NH-Sniper"]
     mode_kr = "실전" if nh_cfg["mode"] == "REAL" else "모의"
     write_log(f"=== [V5.0 NH-Sniper Agent] 신고가 상승음봉 자동매매 개시 ({mode_kr}·계좌:{nh_cfg['account_no']}) ===")
