@@ -28,6 +28,7 @@ var MAIN_SHEET_NAME = '1D-Rebound';
 //
 // ?type=lead                              → 주도주 로그
 // ?type=trades                            → 매매일지
+// ?type=scan                              → 스캔 audit (오늘의 주도주 표)
 // ?type=chart&code=XXXXXX
 //          [&period=250][&period_div=D|W|M] → 봉 차트 데이터
 // ?type=stockinfo&code=XXXXXX            → 현재가 + 기본정보 + 수급
@@ -40,6 +41,7 @@ function doGet(e) {
   try {
     if (type === 'lead'   || type === 'all') result.leadStocks = getLeadStocks();
     if (type === 'trades' || type === 'all') result.trades     = getTrades();
+    if (type === 'scan')                     result.scanTable  = getScanTable();
 
     if (type === 'chart') {
       var code      = (e.parameter.code       || '');
@@ -96,6 +98,57 @@ function getLeadStocks() {
       remark:        String(r[8] || '')    // 비고
     };
   });
+}
+
+
+// ============================================================
+// 스캔 audit 반환 — "오늘의 주도주" 표 데이터
+//
+// 1_Scan_Audit_Log 컬럼 (13컬럼):
+//   [0]날짜 [1]종목코드 [2]종목명 [3]거래대금(억) [4]거래대금30위
+//   [5]등락률(%) [6]등락률10%통과 [7]거래량비(%) [8]거래량200%통과
+//   [9]52주신고가 [10]LeaderScore [11]최종결과 [12]탈락사유
+//
+// 최근 600행(약 20영업일치)을 전체 반환 — 순위·필터링은 클라이언트에서 수행
+// ============================================================
+function getScanTable() {
+  var wb    = SpreadsheetApp.openById(LOG_DB_ID);
+  var sheet = wb.getSheetByName('1_Scan_Audit_Log');
+  var rows  = [];
+  if (sheet) {
+    var values = sheet.getDataRange().getValues();
+    if (values.length > 1) {
+      rows = values.slice(1).slice(-600).map(function(r) {
+        return {
+          date:       formatCell(r[0]),
+          code:       String(r[1] || '').padStart(6, '0'),
+          name:       String(r[2] || ''),
+          amt100m:    toNum(r[3]),
+          changeRate: toNum(r[5]),
+          volRatio:   toNum(r[7]),
+          newHigh:    String(r[9] || '-'),
+          result:     String(r[11] || ''),
+          failReason: String(r[12] || '')
+        };
+      });
+    }
+  }
+
+  // 마지막 스캔 메타 (2_Scan_Summary_Log: [0]날짜 [1]거래대금30위 ... [6]최종선정)
+  var lastScan = null;
+  var ss = wb.getSheetByName('2_Scan_Summary_Log');
+  if (ss) {
+    var sv = ss.getDataRange().getValues();
+    if (sv.length > 1) {
+      var last = sv[sv.length - 1];
+      lastScan = {
+        date:     formatCell(last[0]),
+        scanned:  toNum(last[1]),
+        selected: toNum(last[6])
+      };
+    }
+  }
+  return { rows: rows, lastScan: lastScan };
 }
 
 

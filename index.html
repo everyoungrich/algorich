@@ -514,7 +514,7 @@
     </div>
 
     <nav class="main-nav">
-        <button class="nav-tab active" data-sec="scan"     onclick="showSection('scan')">주도주 스캔</button>
+        <button class="nav-tab active" data-sec="scan"     onclick="showSection('scan')">오늘의 주도주</button>
         <button class="nav-tab"        data-sec="strategy" onclick="showSection('strategy')">전략 후보</button>
         <button class="nav-tab"        data-sec="holdings" onclick="showSection('holdings')">보유현황</button>
         <button class="nav-tab"        data-sec="journal"  onclick="showSection('journal')">매매일지</button>
@@ -527,7 +527,7 @@
 <!-- ════════════════ SUMMARY BAR ════════════════ -->
 <div class="summary-bar">
     <div class="stat-card">
-        <div class="stat-label">최근 스캔 주도주</div>
+        <div class="stat-label">관심종목 등록</div>
         <div class="stat-val" id="sum-scan-cnt">-</div>
         <div class="stat-sub" id="sum-scan-date"></div>
     </div>
@@ -548,10 +548,18 @@
     </div>
 </div>
 
-<!-- ════════════════ SECTION: 주도주 스캔 ════════════════ -->
+<!-- ════════════════ SECTION: 오늘의 주도주 ════════════════ -->
 <div class="section active" id="sec-scan">
     <div class="section-title">
-        📡 주도주 스캔
+        📡 오늘의 주도주
+        <span class="cnt">— 거래대금 상위 30 중 상승률 10%↑ · ★ = 관심종목</span>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+        <div id="scan-status-line" style="font-size:12px;color:var(--sub);margin-bottom:10px">데이터 로딩 중...</div>
+        <div id="scan-audit-table"></div>
+    </div>
+    <div class="section-title" style="margin-top:18px">
+        🗂 관심종목 등록 이력
         <span class="cnt" id="scan-section-sub">— S-Class 4대 조건 충족 종목</span>
     </div>
     <div class="card">
@@ -834,12 +842,13 @@ function stratPill(name) {
 // 데이터 로딩
 // ═══════════════════════════════════════════════════════════
 async function updateDashboard() {
-    const [leadRes, tradeRes] = await Promise.allSettled([
+    const [leadRes, tradeRes, scanRes] = await Promise.allSettled([
         fetch(API_URL + '?type=lead').then(r => { if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); }),
         fetch(API_URL + '?type=trades').then(r => { if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); }),
+        fetch(API_URL + '?type=scan').then(r => { if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); }),
     ]);
 
-    let leadRows = [], tradeRows = [];
+    let leadRows = [], tradeRows = [], scanData = null;
 
     if (leadRes.status === 'fulfilled' && leadRes.value?.status === 'ok')
         leadRows = leadRes.value.leadStocks || [];
@@ -849,9 +858,14 @@ async function updateDashboard() {
         tradeRows = tradeRes.value.trades || [];
     else console.warn('[AR] trades API 실패:', tradeRes.reason?.message || tradeRes.value?.error);
 
+    if (scanRes.status === 'fulfilled' && scanRes.value?.status === 'ok')
+        scanData = scanRes.value.scanTable || null;
+    else console.warn('[AR] scan API 실패:', scanRes.reason?.message || scanRes.value?.error);
+
     _allTradeRows = tradeRows;
     buildHoldingsMap(tradeRows);
     renderSummary(leadRows, tradeRows);
+    renderScanTable(scanData);
     renderLeadStocks(leadRows);
     renderStratCandidates(leadRows);
     renderHoldings(tradeRows);
@@ -908,7 +922,96 @@ function renderSummary(leadRows, tradeRows) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 주도주 스캔 (Section 1)
+// 오늘의 주도주 표 (Section 1 상단) — scan audit 기반
+// ═══════════════════════════════════════════════════════════
+function renderScanTable(scanData) {
+    const statusEl = document.getElementById('scan-status-line');
+    const tableEl  = document.getElementById('scan-audit-table');
+    if (!statusEl || !tableEl) return;
+
+    if (!scanData || !scanData.rows || !scanData.rows.length) {
+        statusEl.innerHTML = '<span style="color:var(--sub)">●</span> 스캔 데이터 없음';
+        tableEl.innerHTML  = '<div class="empty-state">스캔 audit 기록이 없습니다.</div>';
+        return;
+    }
+
+    // 날짜별 그룹 → 최근 5일
+    const byDate = new Map();
+    scanData.rows.forEach(r => {
+        if (!r.date) return;
+        if (!byDate.has(r.date)) byDate.set(r.date, []);
+        byDate.get(r.date).push(r);
+    });
+    const dates = [...byDate.keys()].sort((a,b) => b.localeCompare(a)).slice(0, 5);
+
+    // ── 상태줄 (최신 스캔 기준) ──
+    const last = scanData.lastScan;
+    const latestDate = dates[0];
+    const latestAll  = byDate.get(latestDate) || [];
+    const latestHot  = latestAll.filter(r => (r.changeRate||0) >= 10.0);
+    const stars      = latestHot.filter(r => r.result === 'PASS').length;
+    // 주도테마: 10%+ 종목 섹터 최빈값
+    const secCount = {};
+    latestHot.forEach(r => { const s = getSector(r.name||''); if (s) secCount[s] = (secCount[s]||0)+1; });
+    const topSec = Object.entries(secCount).sort((a,b) => b[1]-a[1])[0];
+    const themeTxt = (topSec && latestHot.length)
+        ? ' · 주도테마: <span style="color:var(--green)">' + esc(topSec[0]) + '</span> (' + latestHot.length + '종목 중 ' + topSec[1] + ')'
+        : '';
+    const scannedN = (last && last.date === latestDate) ? last.scanned : latestAll.length;
+    statusEl.innerHTML = '<span style="color:var(--green)">●</span> ' + esc(latestDate)
+        + ' 15:30 스캔 · ' + scannedN + '종목 심사' + themeTxt
+        + ' · 관심종목 <span style="color:var(--gold)">' + stars + '종목</span>';
+
+    // ── 날짜별 표 ──
+    tableEl.innerHTML = dates.map(date => {
+        const all = [...byDate.get(date)].sort((a,b) => (b.amt100m||0) - (a.amt100m||0));
+        const rankMap = {};
+        all.forEach((r, i) => { rankMap[r.code] = i + 1; });   // 당일 심사 30종목 내 거래대금 순위
+        const hot = all.filter(r => (r.changeRate||0) >= 10.0);
+
+        let body;
+        if (!hot.length) {
+            body = '<tr><td colspan="8" style="text-align:center;color:var(--sub);padding:14px">상승률 10% 이상 종목 없음</td></tr>';
+        } else {
+            body = hot.map(r => {
+                const code   = esc(String(r.code||'').replace(/[^0-9A-Za-z]/g,''));
+                const sector = getSector(r.name||'');
+                const secTag = sector ? '<span class="sec-tag">' + esc(sector) + '</span>' : '<span style="color:var(--sub);font-size:10px">-</span>';
+                const vr     = r.volRatio || 0;
+                const volOk  = vr >= 200.0;
+                const volHtml = volOk
+                    ? '<span style="color:var(--green)">' + vr.toFixed(0) + '% ✓</span>'
+                    : '<span style="color:var(--gold)">' + vr.toFixed(0) + '%</span>';
+                const nh = r.newHigh === 'Y' ? '<span style="color:var(--green)">O</span>'
+                         : r.newHigh === 'N' ? '<span style="color:var(--sub)">X</span>'
+                         : '<span style="color:var(--sub)" title="미검증">–</span>';
+                const isStar = r.result === 'PASS';
+                const star   = isStar ? '<span style="color:var(--gold);font-size:15px">★</span>' : '';
+                const rowBg  = isStar ? ' style="background:rgba(0,255,163,0.05)"' : '';
+                return '<tr class="lead-row"' + rowBg + ' data-code="' + code + '" data-name="' + esc(r.name||'') + '" data-price="0" data-rate="' + (r.changeRate||0) + '" data-amt="' + (r.amt100m||0) + '" data-date="' + esc(date) + '">'
+                    + '<td style="color:var(--sub)">' + (rankMap[r.code]||'-') + '</td>'
+                    + '<td><div>' + esc(r.name||'') + '</div><div class="sub-text">' + code + '</div></td>'
+                    + '<td>' + secTag + '</td>'
+                    + '<td style="text-align:right">' + fmtAmt(r.amt100m) + '</td>'
+                    + '<td style="text-align:right"><span class="' + ((r.changeRate||0) >= 0 ? 'up' : 'down') + '">' + fmtPct(r.changeRate||0) + '</span></td>'
+                    + '<td style="text-align:right">' + volHtml + '</td>'
+                    + '<td style="text-align:center">' + nh + '</td>'
+                    + '<td style="text-align:center">' + star + '</td></tr>';
+            }).join('');
+        }
+
+        return '<div class="date-group">'
+            + '<div class="dg-hdr">📅 ' + esc(date) + ' · 급등 ' + hot.length + '종목<span class="dg-line"></span></div>'
+            + '<table class="tbl"><colgroup><col style="width:7%"><col style="width:24%"><col style="width:13%"><col style="width:14%"><col style="width:12%"><col style="width:14%"><col style="width:9%"><col style="width:7%"></colgroup>'
+            + '<thead><tr><th style="text-align:left">순위</th><th style="text-align:left">종목명</th><th style="text-align:left">섹터</th>'
+            + '<th style="text-align:right">거래대금</th><th style="text-align:right">등락률</th><th style="text-align:right">거래량 전일비</th>'
+            + '<th>52주 신고가</th><th>관심</th></tr></thead>'
+            + '<tbody>' + body + '</tbody></table></div>';
+    }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+// 관심종목 등록 이력 (Section 1 하단)
 // ═══════════════════════════════════════════════════════════
 function renderLeadStocks(rows) {
     const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 6);

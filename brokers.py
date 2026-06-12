@@ -89,12 +89,17 @@ class KISBroker(BaseBroker):
         self._real_token_expire = datetime.now()
         self._mock_token = ""
         self._mock_token_expire = datetime.now()
+        # 토큰 발급 실패 시 재시도 쿨다운 (KIS tokenP는 분당 1회 제한)
+        self._real_token_retry_after = datetime.now()
+        self._mock_token_retry_after = datetime.now()
 
     # -- 토큰 발급 (실전/모의 분리) ------------------------------------------
 
     def _get_real_token(self):
         if self._real_token and datetime.now() < self._real_token_expire:
             return self._real_token
+        if datetime.now() < self._real_token_retry_after:
+            return None  # 발급 실패 직후 쿨다운 중 — 분당 1회 제한 준수
         url = f"{self.REAL_BASE_URL}/oauth2/tokenP"
         body = {"grant_type": "client_credentials",
                 "appkey": self.real_app_key, "appsecret": self.real_app_secret}
@@ -109,11 +114,14 @@ class KISBroker(BaseBroker):
         status = res.status_code if res else "응답없음"
         body_txt = res.text[:300] if res else "요청 실패"
         write_log(f"[실전 토큰 발급 실패] status={status}, body={body_txt}")
+        self._real_token_retry_after = datetime.now() + timedelta(seconds=65)
         return None
 
     def _get_mock_token(self):
         if self._mock_token and datetime.now() < self._mock_token_expire:
             return self._mock_token
+        if datetime.now() < self._mock_token_retry_after:
+            return None  # 발급 실패 직후 쿨다운 중 — 분당 1회 제한 준수
         url = f"{self.MOCK_BASE_URL}/oauth2/tokenP"
         body = {"grant_type": "client_credentials",
                 "appkey": self.mock_app_key, "appsecret": self.mock_app_secret}
@@ -128,6 +136,7 @@ class KISBroker(BaseBroker):
         status = res.status_code if res else "응답없음"
         body_txt = res.text[:300] if res else "요청 실패"
         write_log(f"[모의 토큰 발급 실패] status={status}, body={body_txt}")
+        self._mock_token_retry_after = datetime.now() + timedelta(seconds=65)
         return None
 
     def get_access_token(self):
@@ -575,19 +584,28 @@ class KISBroker(BaseBroker):
                   f"{len(candidates)}종목 -> 52주 신고가 검증 시작")
 
         # ── 2차 필터: 52주 신고가 ─────────────────────────────────────────
+        # 대시보드 표시용: 등락률 10% 이상 '전체'의 신고가 OX를 검증해 audit에 기록.
+        # S-Class 선정 조건은 동일 (1차 전체 통과 + 신고가 충족).
         cnt_52wk    = 0
         s_class_list = []
-        for cand in candidates:
-            code       = cand["code"]
-            name       = cand["name"]
-            vol_rate   = cand.get("vol_rate", 0)
-            price_rate = cand.get("price_rate", 0)
-            mkt_rank   = cand.get("mkt_rank", 0)
+        cand_by_code = {c["code"]: c for c in candidates}
+        verify_list  = [e for e in audit_map.values()
+                        if float(e.get("change_rate", 0)) >= 10.0]
+        write_log(f"[2차 검증] 신고가 검증 대상(등락 10%+ 전체): {len(verify_list)}종목 "
+                  f"(1차 통과 {len(candidates)}종목 포함)")
+
+        for entry in verify_list:
+            code = entry["code"]
+            name = entry["name"]
+            cand = cand_by_code.get(code)   # None = 1차 탈락(신고가 표기만)
+            vol_rate   = cand.get("vol_rate", 0)   if cand else entry.get("vol_ratio", 0)
+            price_rate = cand.get("price_rate", 0) if cand else entry.get("change_rate", 0)
+            mkt_rank   = cand.get("mkt_rank", 0)   if cand else 0
             daily_info = self.get_daily_prices(code, count=260, end_date=target_date)
             if len(daily_info) < 250:
-                if code in audit_map:
-                    audit_map[code]["result"]      = "FAIL"
-                    audit_map[code]["fail_reason"]  = "일봉 데이터 부족"
+                if cand:
+                    entry["result"]      = "FAIL"
+                    entry["fail_reason"]  = "일봉 데이터 부족"
                 continue
 
             df = pd.DataFrame(daily_info)[::-1].reset_index(drop=True)
@@ -596,9 +614,12 @@ class KISBroker(BaseBroker):
                 .apply(pd.to_numeric)
             )
             is_new_high = self.is_s_class_target(df)
+            entry["new_high"] = "Y" if is_new_high else "N"
 
-            if code in audit_map:
-                audit_map[code]["new_high"] = "Y" if is_new_high else "N"
+            if cand is None:
+                # 1차 탈락 종목: 신고가 OX만 기록 (대시보드 표시용), 선정 로직 미진입
+                time.sleep(0.2)
+                continue
 
             if is_new_high:
                 cnt_52wk += 1
