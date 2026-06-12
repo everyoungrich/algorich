@@ -450,11 +450,16 @@ class KISBroker(BaseBroker):
         log_date_str = datetime.strptime(date_label, "%Y%m%d").strftime("%Y-%m-%d")
         write_log(f"[@Scanner] V3.2 S-Class 주도주 스캐닝 시작 (기준일: {log_date_str})")
 
-        # ── KIS API 다중 호출로 비ETF 30종목 확보 ──────────────────────────
-        # 문제: KIS API(FHPST01710000)는 호출당 최대 30종목만 반환.
-        #       ETF가 상위권에 대거 포진하면 비ETF 종목 수가 13~17개에 그침.
-        # 해결: FID_DIV_CLS_CODE = 0(전체)/1(KOSPI)/2(KOSDAQ) 순으로 최대 3회 호출,
-        #       중복 제거 후 거래대금 기준 재정렬 → 비ETF 상위 30종목 선정.
+        # ── KIS API 호출: 우선주·ETF·ETN·SPAC 제외 플래그 적용 ─────────────
+        # FID_TRGT_EXLS_CLS_CODE (10자리, KIS 공식 문서):
+        #   [투자위험/경고/주의, 관리종목, 정리매매, 불성실공시, 우선주,
+        #    거래정지, ETF, ETN, 신용주문불가, SPAC]
+        # "0000101101" = 우선주+ETF+ETN+SPAC 제외 → div=0 한 번으로 순수 보통주 top30 확보
+        # (2026-06-12 검증: 기존 "000000"은 ETF가 top30의 절반을 점유해 실제 심사
+        #  커버리지가 비ETF 14위(예: 테크윙 5,756억)에서 절단 — 후성 등 누락 사고 원인.
+        #  플래그 적용 시 30위(3,319억)까지 확장 확인. scan_pool_dump_20260612_2059.json)
+        # ※ FID_DIV_CLS_CODE는 0=전체/1=보통주/2=우선주 (시장 구분 아님 — 과거 주석 오류)
+        #   플래그 적용 후 div=0 첫 호출에서 비ETF 30종목이 차므로 보충 루프는 즉시 종료됨.
         url_amt = (f"{self.REAL_BASE_URL}/uapi/domestic-stock/v1/quotations/volume-rank")
         base_params = {
             "FID_COND_MRKT_DIV_CODE": "J",
@@ -462,7 +467,7 @@ class KISBroker(BaseBroker):
             "FID_INPUT_ISCD":         "0000",
             "FID_BLNG_CLS_CODE":      "3",    # 거래금액순 정렬
             "FID_TRGT_CLS_CODE":      "111111111",
-            "FID_TRGT_EXLS_CLS_CODE": "000000",
+            "FID_TRGT_EXLS_CLS_CODE": "0000101101",   # 우선주·ETF·ETN·SPAC 제외
             "FID_INPUT_PRICE_1": "", "FID_INPUT_PRICE_2": "",
             "FID_VOL_CNT": "",
             "FID_INPUT_DATE_1": target_date or "",
@@ -471,7 +476,7 @@ class KISBroker(BaseBroker):
         seen_codes   = set()
         raw_combined = []
 
-        for div_code in ["0", "1", "2"]:   # 전체 → KOSPI → KOSDAQ 순으로 보충 호출
+        for div_code in ["0", "1", "2"]:   # 비ETF 30종목 미달 시에만 보충 호출 (안전망)
             params = {**base_params, "FID_DIV_CLS_CODE": div_code}
             res    = safe_request('GET', url_amt, gs_manager=self.gs_manager,
                                   headers=self._real_headers("FHPST01710000"),
