@@ -1791,4 +1791,206 @@ function _renderChart(candles) {
     const cs = _chart.addCandlestickSeries({ upColor:'#00ffa3', downColor:'#ff4d4d', borderVisible:false, wickUpColor:'#00ffa3', wickDownColor:'#ff4d4d' });
     cs.setData(candles.map(d => ({ time:dateToTime(d.date), open:d.open, high:d.high, low:d.low, close:d.close })));
     const volS = _chart.addHistogramSeries({ priceFormat:{type:'volume'}, priceScaleId:'vol', lastValueVisible:false, priceLineVisible:false });
-    volS.priceScale().apply
+    volS.priceScale().applyOptions({ scaleMargins:{top:0.8,bottom:0} });
+    volS.setData(candles.map(d => ({ time:dateToTime(d.date), value:d.volume, color:d.close>=d.open?'rgba(0,255,163,0.35)':'rgba(255,77,77,0.35)' })));
+    _maSeries = {};
+    MA_DEFS.forEach(({ key, period, color }) => {
+        const s = _chart.addLineSeries({ color, lineWidth:1, priceLineVisible:false, lastValueVisible:false, visible:_maVisible[key]!==false });
+        s.setData(calcMA(candles,period).map((v,i) => v!==null?{time:dateToTime(candles[i].date),value:v}:null).filter(Boolean));
+        _maSeries[key] = s;
+    });
+    const highs = candles.map(d => d.high).filter(v => v > 0);
+    if (highs.length > 1)
+        cs.createPriceLine({ price:Math.max(...highs.slice(0,-1)), color:'rgba(255,77,77,0.85)', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'52주 고가' });
+    const buyP = _modalState.buyPrice, sellP = _modalState.sellPrice;
+    if (buyP > 0) {
+        cs.createPriceLine({ price:buyP,        color:'#00ffa3', lineWidth:1, lineStyle:0, axisLabelVisible:true, title:'매수가' });
+        cs.createPriceLine({ price:buyP*1.25,   color:'#00ffa3', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'+25%' });
+        cs.createPriceLine({ price:buyP*0.97,   color:'#ff4d4d', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'-3%' });
+    }
+    if (sellP > 0 && sellP !== buyP)
+        cs.createPriceLine({ price:sellP, color:'#f0a500', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'매도가' });
+    const holding = _holdingsMap[_modalState.code];
+    if (!buyP && holding && holding.buyPrice > 0) {
+        const hp = holding.buyPrice;
+        cs.createPriceLine({ price:hp,      color:'#00ffa3', lineWidth:1, lineStyle:0, axisLabelVisible:true, title:'매수가' });
+        cs.createPriceLine({ price:hp*1.25, color:'#00ffa3', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'+25%' });
+        cs.createPriceLine({ price:hp*0.97, color:'#ff4d4d', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'-3%' });
+    }
+    _chart.timeScale().fitContent();
+    const onResize = () => { if (_chart) _chart.applyOptions({ width: wrap.clientWidth }); };
+    window.addEventListener('resize', onResize);
+    div._onResize = onResize;
+}
+function _updateModalHeader(info) {
+    const price = info.price||_modalState.price, rate = info.changeRate||_modalState.rate, chg = info.priceChange||0;
+    const cls = rate>=0?'up':'down', sign = rate>=0?'+':'';
+    document.getElementById('modal-price').textContent = price>0 ? fmtNum(price)+'원' : '-';
+    document.getElementById('modal-change').innerHTML  = '<span class="'+cls+'">'+sign+Number(rate).toFixed(2)+'%</span>' +
+        (chg ? '<span style="color:var(--sub);font-size:14px;margin-left:8px;">'+(chg>0?'+':'')+fmtNum(chg)+'원</span>' : '');
+    // 관리종목·투자경고 배지
+    const warnEl = document.getElementById('modal-warn-badge');
+    if (warnEl) {
+        let badge = '';
+        if (info.isMgmt)          badge += '<span style="background:rgba(255,77,77,.18);color:#ff4d4d;border:1px solid rgba(255,77,77,.4);border-radius:4px;font-size:10px;padding:2px 6px;font-weight:700;margin-right:4px">관리종목</span>';
+        if (info.warnLabel)       badge += '<span style="background:rgba(255,140,0,.15);color:#f0a500;border:1px solid rgba(255,140,0,.4);border-radius:4px;font-size:10px;padding:2px 6px;margin-right:4px">⚠ '+info.warnLabel+'</span>';
+        warnEl.innerHTML = badge;
+    }
+}
+function _renderInfoGrid(info) {
+    const highs = _currentCnds.map(d=>d.high).filter(v=>v>0);
+    const lows  = _currentCnds.map(d=>d.low).filter(v=>v>0);
+    const h52 = highs.length?Math.max(...highs):0, l52 = lows.length?Math.min(...lows):0;
+    const mcB = info.marketCapB||0;
+    let mcStr = '-';
+    if (mcB>0) { const jo=Math.floor(mcB/10000),eok=mcB%10000; mcStr=jo>0?jo+'조'+(eok>0?' '+eok+'억':''):mcB+'억'; }
+    // current_amt_100m: 마지막 영업일 거래대금 (억) — GAS inquire-price(FHKST01010100) 기준
+    const current_amt_100m = info.current_amt_100m || 0;
+    const today            = info.dataDate || '-';
+
+    // 모달 거래대금: 마지막 영업일 기준 (KIS inquire-price 당일 누적)
+    const tvStr = current_amt_100m > 0
+        ? fmtAmt(current_amt_100m) + '<br><span style="font-size:10px;color:var(--sub)">' + today + ' 기준</span>'
+        : '-';
+
+    // PER·PBR: 0이면 "N/A" (적자·신규상장), 양수면 소수 1자리
+    const perStr = info.per > 0  ? Number(info.per).toFixed(1) + 'x'
+                 : info.per < 0  ? 'N/A (적자)'
+                 : 'N/A';
+    const pbrStr = info.pbr > 0  ? Number(info.pbr).toFixed(1) + 'x' : 'N/A';
+    const epsStr = info.eps && info.eps !== 0 ? fmtNum(Math.round(info.eps)) + '원' : '-';
+    const bpsStr = info.bps && info.bps >  0 ? fmtNum(Math.round(info.bps)) + '원' : '-';
+
+    const items = [
+        {label:'전일종가', val:fmtNum(info.prevClose||0)+'원'},
+        {label:'시가',     val:fmtNum(info.open||0)+'원'},
+        {label:'고가',     val:fmtNum(info.high||0)+'원',   cls:'up'},
+        {label:'저가',     val:fmtNum(info.low||0)+'원',    cls:'down'},
+        {label:'거래량',   val:info.volume>0 ? fmtNum(info.volume)+'주' : '-'},
+        {label:'거래대금', val:tvStr},
+        {label:'시총',     val:mcStr},
+        {label:'PER / PBR',val: perStr + ' / ' + pbrStr},
+        {label:'EPS / BPS',val: epsStr + ' / ' + bpsStr},
+        {label:'52주 최고',val:h52>0 ? fmtNum(h52)+'원' : '-', cls:'up'},
+        {label:'52주 최저',val:l52>0 ? fmtNum(l52)+'원' : '-', cls:'down'},
+        {label:'시장',     val: (info.market||'-') + (info.isMgmt?' <span style="color:#ff4d4d;font-size:10px">[관리]</span>':'' )},
+    ];
+    const dateNote = today !== '-'
+        ? '📅 기준일: ' + today + ' (마지막 영업일 · KIS inquire-price)'
+        : '📅 기준일 확인 불가 (KIS 응답 없음)';
+    const errNote = info._priceErr
+        ? '<div style="grid-column:span 4;font-size:10px;color:#ff6b6b;margin-bottom:4px">⚠ 일부 데이터 오류: ' + info._priceErr + '</div>'
+        : '';
+    document.getElementById('modal-info-grid').innerHTML =
+        '<div style="grid-column:span 4;font-size:10px;color:var(--sub);margin-bottom:4px">' + dateNote + '</div>' +
+        errNote +
+        items.map(it =>
+            '<div class="info-item"><span class="info-label">'+it.label+'</span><span class="info-val'+(it.cls?' '+it.cls:'')+'">'+it.val+'</span></div>'
+        ).join('');
+}
+function _renderInfoGridFallback(price) {
+    document.getElementById('modal-info-grid').innerHTML =
+        '<div class="info-item"><span class="info-label">현재가</span><span class="info-val">'+fmtNum(price)+'원</span></div>' +
+        '<div class="info-item" style="grid-column:span 3"><span class="info-label" style="color:var(--sub)">실시간 데이터를 가져올 수 없습니다</span></div>';
+}
+function _renderSupply(info) {
+    // 백만원 → 억원 표시 (부호·색상 포함)
+    function fmtAmt_(manwon, small) {
+        if (manwon === null || manwon === undefined || manwon === '') return '<span style="color:var(--sub)">-</span>';
+        const v = Number(manwon);
+        if (v === 0) return '<span style="color:var(--sub)">0</span>';
+        const sign = v >= 0 ? '+' : '';
+        const cls  = v > 0 ? 'up' : 'down';
+        const eok  = v / 100;
+        const disp = Math.abs(eok) >= 1
+            ? sign + eok.toFixed(1) + '억'
+            : sign + v.toFixed(0) + '백만';
+        const sz = small ? 'font-size:11px;' : '';
+        return '<span class="supply-val ' + cls + '" style="' + sz + '">' + disp + '</span>';
+    }
+    // 세부 항목 한 줄 (값 0이면 숨김)
+    function subRow(label, val) {
+        if (!val) return '';
+        const sign = val > 0 ? '+' : '';
+        const eok  = (val / 100);
+        const disp = Math.abs(eok) >= 1 ? sign + eok.toFixed(1) + '억' : sign + val.toFixed(0) + '백만';
+        const cls  = val > 0 ? 'color:#00ffa3' : 'color:#ff4d4d';
+        return '<div style="display:flex;justify-content:space-between;padding:3px 0 3px 14px;font-size:11px;border-top:1px solid rgba(255,255,255,.04)">'
+            + '<span style="color:var(--sub)">' + label + '</span>'
+            + '<span style="' + cls + ';font-weight:600">' + disp + '</span></div>';
+    }
+
+    const today = info.dataDate || '-';
+    const supplyDateNote = today !== '-'
+        ? '📅 기준일: ' + today + ' (마지막 영업일 · KIS inquire-investor)'
+        : '📅 기준일 확인 불가';
+    const supplyErrNote = info._invErr
+        ? '<div style="font-size:10px;color:#ff6b6b;margin-bottom:4px">⚠ 수급 데이터 오류: ' + info._invErr + '</div>'
+        : '';
+
+    // 기관 세부 서브행 (값이 있는 항목만 표시)
+    const instSubs = [
+        subRow('금융투자', info.fnncNetAmt),
+        subRow('투신',     info.ivtrNetAmt),
+        subRow('사모',     info.prvtNetAmt),
+        subRow('보험',     info.insrcNetAmt),
+        subRow('은행',     info.bankNetAmt),
+        subRow('사업법인', info.bsnsNetAmt),
+        subRow('기타법인', info.etcNetAmt),
+    ].join('');
+
+    function mainRow(label, amt, subs) {
+        return '<div class="supply-row" style="flex-direction:column;align-items:stretch;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center">' +
+            '<span class="supply-label">' + label + '</span>' +
+            '<div style="text-align:right">' + fmtAmt_(amt) + '</div>' +
+            '</div>' +
+            (subs || '') +
+            '</div>';
+    }
+
+    document.getElementById('modal-supply-rows').innerHTML =
+        '<div style="font-size:10px;color:var(--sub);margin-bottom:8px">' + supplyDateNote + '</div>' +
+        supplyErrNote +
+        mainRow('기관',   info.instNetAmt, instSubs) +
+        mainRow('외국인', info.frnNetAmt,  '') +
+        mainRow('개인',   info.indvNetAmt, '');
+}
+function _destroyChart() {
+    if (_chart) {
+        const prev = document.querySelector('#chart-wrap > div:not(#chart-msg)');
+        if (prev && prev._onResize) window.removeEventListener('resize', prev._onResize);
+        _chart.remove(); _chart = null;
+    }
+    _maSeries = {}; _currentCnds = [];
+    Array.from(document.getElementById('chart-wrap').children).forEach(el => { if (el.id!=='chart-msg') el.remove(); });
+    const msgEl = document.getElementById('chart-msg');
+    if (msgEl) msgEl.style.display = 'flex';
+}
+function closeChart() { document.getElementById('chart-overlay').style.display = 'none'; _destroyChart(); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChart(); });
+document.getElementById('chart-overlay').addEventListener('click', function(e) { if (e.target === this) closeChart(); });
+
+function _delegateRowClick(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.addEventListener('click', e => {
+        const tr = e.target.closest('tr[data-code]');
+        if (!tr) return;
+        openChartModal(tr.dataset.code||'', tr.dataset.name||'', parseFloat(tr.dataset.price)||0,
+            parseFloat(tr.dataset.rate)||0, parseFloat(tr.dataset.buyPrice)||0,
+            parseFloat(tr.dataset.sellPrice)||0, tr.dataset.strategy||'',
+            parseInt(tr.dataset.amt)||0, tr.dataset.date||'');
+    });
+}
+_delegateRowClick('scan-audit-table');
+_delegateRowClick('lead-stock-table');
+_delegateRowClick('holdings-table');
+_delegateRowClick('journal-table');
+
+updateDashboard();
+setInterval(updateDashboard, 60000);
+</script>
+</body>
+</html>
+<!-- test_sync -->
