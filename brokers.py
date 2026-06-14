@@ -336,6 +336,92 @@ class KISBroker(BaseBroker):
             write_log(f"[에러] 52주 신고가 검증 중 차트 데이터 오류: {e}")
             return False
 
+    def evaluate_nh_hunter(self, df, vol_ratio: float, price_rate: float, amt_rank: int) -> dict:
+        """
+        NH-Hunter V1 조건 평가 (Audit 전용 — 실매매 없음).
+
+        조건:
+          1. 거래대금 TOP30
+          2. 상승률 ≥ 10%
+          3. 52주 신고가 근접: today_close ≥ 52w_high × 0.97
+          4. 7일 전고점 돌파: 7d_high < today_close ≤ 7d_high × 1.10
+          5. 윗꼬리 ≤ 3%: (today_high − today_close) / today_high × 100
+          6. 거래량비 ≥ 150%
+
+        반환: dict with keys:
+          cond_top30, cond_rate10, cond_nh97, cond_box7, cond_wick3, cond_vol150,
+          pass_all, fail_reasons,
+          h52, h52_gap_pct, h7d, h7d_gap_pct, wick_pct
+        """
+        r = {
+            'cond_top30':  False, 'cond_rate10': False,
+            'cond_nh90':   False, 'cond_box7':   False,
+            'cond_wick3':  False, 'cond_vol150':  False,
+            'pass_all':    False, 'fail_reasons': [],
+            'h52': 0, 'h52_gap_pct': 0.0,
+            'h7d': 0, 'h7d_gap_pct': 0.0,
+            'wick_pct': 0.0,
+        }
+        if len(df) < 10:
+            r['fail_reasons'] = ['일봉 데이터 부족']
+            return r
+
+        try:
+            curr         = df.iloc[-1]
+            today_close  = float(curr['clpr'])
+            today_high   = float(curr['hgpr'])
+
+            # 조건 1: 거래대금 TOP30
+            r['cond_top30'] = (amt_rank <= 30)
+
+            # 조건 2: 상승률 ≥ 10%
+            r['cond_rate10'] = (price_rate >= 10.0)
+
+            # 조건 3: 52주 신고가 근접 (today_close ≥ 52w_high × 0.97)
+            prior_h = df['hgpr'].iloc[:-1]
+            prior_h_clean = prior_h[prior_h > 0]
+            if not prior_h_clean.empty:
+                h52 = float(prior_h_clean.max())
+                r['h52'] = int(h52)
+                if h52 > 0:
+                    r['h52_gap_pct'] = round(today_close / h52 * 100, 1)
+                    r['cond_nh90'] = (today_close >= h52 * 0.90)   # 신고가 -10% 이내
+
+            # 조건 4: 7일 전고점 돌파 (7d_high < today_close ≤ 7d_high × 1.10)
+            recent7_h = df['hgpr'].iloc[-8:-1]
+            if not recent7_h.empty:
+                h7d = float(recent7_h.max())
+                r['h7d'] = int(h7d)
+                if h7d > 0:
+                    r['h7d_gap_pct'] = round((today_close / h7d - 1) * 100, 1)
+                    r['cond_box7'] = (today_close > h7d and today_close <= h7d * 1.10)
+
+            # 조건 5: 윗꼬리 ≤ 3%
+            if today_high > 0:
+                wick = (today_high - today_close) / today_high * 100
+                r['wick_pct'] = round(wick, 2)
+                r['cond_wick3'] = (wick <= 3.0)
+
+            # 조건 6: 거래량비 ≥ 150%
+            r['cond_vol150'] = (vol_ratio >= 150.0)
+
+            # 종합 판정
+            fails = []
+            if not r['cond_top30']:  fails.append('TOP30 미진입')
+            if not r['cond_rate10']: fails.append(f'상승률부족({price_rate:.1f}%)')
+            if not r['cond_nh90']:   fails.append(f'52주신고가이격({r["h52_gap_pct"]:.1f}%)')
+            if not r['cond_box7']:   fails.append(f'7일박스미돌파({r["h7d_gap_pct"]:+.1f}%)')
+            if not r['cond_wick3']:  fails.append(f'윗꼬리과다({r["wick_pct"]:.1f}%)')
+            if not r['cond_vol150']: fails.append(f'거래량부족({vol_ratio:.0f}%)')
+            r['fail_reasons'] = fails
+            r['pass_all']     = (len(fails) == 0)
+
+        except (KeyError, ValueError, TypeError) as e:
+            write_log(f"[에러] evaluate_nh_hunter 중 오류: {e}")
+            r['fail_reasons'] = [f'평가오류: {e}']
+
+        return r
+
     def get_inst_net_amount(self, code) -> float:
         """당일 기관 합계 순매수대금(백만원). 실패 시 None 반환."""
         if not self._get_real_token():
@@ -599,6 +685,8 @@ class KISBroker(BaseBroker):
         write_log(f"[2차 검증] 신고가 검증 대상(등락 10%+ 전체): {len(verify_list)}종목 "
                   f"(1차 통과 {len(candidates)}종목 포함)")
 
+        df_cache = {}   # code -> df  (NH-Hunter 평가 재사용)
+
         for entry in verify_list:
             code = entry["code"]
             name = entry["name"]
@@ -618,6 +706,7 @@ class KISBroker(BaseBroker):
                 df[["stck_clpr", "stck_hgpr", "acml_tr_pbmn", "acml_vol"]]
                 .apply(pd.to_numeric)
             )
+            df_cache[code] = df   # NH-Hunter 평가 재사용을 위해 캐시
             is_new_high = self.is_s_class_target(df)
             entry["new_high"] = "Y" if is_new_high else "N"
 
@@ -668,6 +757,33 @@ class KISBroker(BaseBroker):
 
             time.sleep(0.2)
 
+        # ── NH-Hunter Audit ────────────────────────────────────────────────
+        nh_hunter_entries = []
+        for code, entry in audit_map.items():
+            if float(entry.get("change_rate", 0)) < 10.0:
+                continue   # 상승률 10% 미만은 NH-Hunter 대상 아님
+            df = df_cache.get(code)
+            if df is None:
+                continue   # 일봉 데이터 미수신 종목 스킵
+            cand     = cand_by_code.get(code)
+            vol_rate = cand.get("vol_rate", 0)   if cand else float(entry.get("vol_ratio", 0))
+            p_rate   = cand.get("price_rate", 0) if cand else float(entry.get("change_rate", 0))
+            mkt_rank = cand.get("mkt_rank", 99)  if cand else 99
+
+            nh = self.evaluate_nh_hunter(
+                df=df, vol_ratio=vol_rate, price_rate=p_rate, amt_rank=mkt_rank
+            )
+            status = "PASS" if nh["pass_all"] else "FAIL"
+            write_log(
+                f"[NH-Hunter] {entry['name']}({code}) {status} "
+                f"h52:{nh['h52_gap_pct']}% h7d:{nh['h7d_gap_pct']:+.1f}% "
+                f"wick:{nh['wick_pct']:.1f}% vol:{vol_rate:.0f}%"
+            )
+            entry_copy = dict(entry)
+            entry_copy["mkt_rank"]  = mkt_rank
+            entry_copy["nh_hunter"] = nh
+            nh_hunter_entries.append(entry_copy)
+
         # ── Audit / Summary 기록 ───────────────────────────────────────────
         if self.gs_manager:
             self.gs_manager.log_audit_batch(log_date_str, list(audit_map.values()))
@@ -680,6 +796,12 @@ class KISBroker(BaseBroker):
                 cnt_52wk=cnt_52wk,
                 cnt_selected=len(s_class_list),
             )
+            if nh_hunter_entries:
+                self.gs_manager.log_nh_hunter_batch(log_date_str, nh_hunter_entries)
+                write_log(
+                    f"[NH-Hunter Audit] {len(nh_hunter_entries)}종목 평가 완료 → "
+                    f"PASS: {sum(1 for e in nh_hunter_entries if e['nh_hunter']['pass_all'])}종목"
+                )
 
         write_log(f"S-Class 주도주 스캐닝 완료 ({log_date_str}): "
                   f"총 {len(s_class_list)} 종목 발굴")

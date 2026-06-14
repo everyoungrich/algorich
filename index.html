@@ -186,16 +186,76 @@
         .sub-text { color: var(--sub); font-size: 10px; margin-top: 1px; }
 
         /* ═══════════════════════════════════════
-           주도주 선정 조건 칩
+           NH-Hunter 칩
            ═══════════════════════════════════════ */
         .cond-chip {
             display: inline-flex; align-items: center;
             font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 8px;
             white-space: nowrap; line-height: 1.6;
         }
-        .chip-top30 { background: rgba(59,130,246,0.12); color: #60a5fa; border: 1px solid rgba(59,130,246,0.30); }
-        .chip-rate  { background: rgba(0,255,163,0.10);  color: #00ffa3; border: 1px solid rgba(0,255,163,0.28); }
-        .chip-star  { background: rgba(240,165,0,0.16);  color: #f0a500; border: 1px solid rgba(240,165,0,0.45); font-size: 10px; }
+        .chip-nh   { background: rgba(168,85,247,0.15); color: #c084fc; border: 1px solid rgba(168,85,247,0.40); font-size: 10px; }
+        .chip-star { background: rgba(240,165,0,0.16);  color: #f0a500; border: 1px solid rgba(240,165,0,0.45); font-size: 10px; }
+        .nh-fail   { color: var(--sub); font-size: 10px; }
+
+        /* ═══════════════════════════════════════
+           SCAN META BAR
+           ═══════════════════════════════════════ */
+        .scan-meta-bar {
+            background: var(--card-bg); border-bottom: 1px solid var(--border);
+            padding: 8px 24px; font-size: 11px; color: var(--sub);
+            display: flex; align-items: center; gap: 6px;
+        }
+
+        /* ═══════════════════════════════════════
+           NH-HUNTER CANDIDATE CARD
+           ═══════════════════════════════════════ */
+        .nh-cand-section { padding: 16px 24px 0; max-width: 1200px; margin: 0 auto; }
+        .nh-cand-label {
+            font-size: 11px; font-weight: 700; color: var(--sub);
+            letter-spacing: .4px; margin-bottom: 10px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .nh-cand-label .badge-nh {
+            font-size: 10px; font-weight: 700; padding: 1px 8px; border-radius: 6px;
+            background: rgba(168,85,247,0.15); color: #c084fc; border: 1px solid rgba(168,85,247,0.35);
+        }
+        .nh-cand-label .badge-s {
+            font-size: 10px; font-weight: 700; padding: 1px 8px; border-radius: 6px;
+            background: rgba(240,165,0,0.12); color: var(--gold); border: 1px solid rgba(240,165,0,0.35);
+        }
+        .nh-cand-card {
+            background: var(--card-bg); border: 1px solid rgba(168,85,247,0.35);
+            border-left: 3px solid #c084fc; border-radius: 12px; padding: 16px;
+            margin-bottom: 10px;
+        }
+        .s-cand-card {
+            background: var(--card-bg); border: 1px solid rgba(240,165,0,0.28);
+            border-left: 3px solid rgba(240,165,0,0.7); border-radius: 12px;
+            padding: 12px 16px; margin-bottom: 8px;
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        }
+        .cand-hdr { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px; }
+        .cand-name { font-size: 15px; font-weight: 700; color: var(--fg); }
+        .cand-code { font-size: 10px; color: var(--sub); margin-top: 2px; }
+        .cand-tag-nh {
+            font-size: 10px; font-weight: 700; padding: 2px 9px; border-radius: 6px;
+            background: rgba(168,85,247,0.15); color: #c084fc; border: 1px solid rgba(168,85,247,0.40);
+            white-space: nowrap;
+        }
+        .cand-tag-s {
+            font-size: 10px; font-weight: 700; padding: 2px 9px; border-radius: 6px;
+            background: rgba(240,165,0,0.12); color: var(--gold); border: 1px solid rgba(240,165,0,0.35);
+            white-space: nowrap;
+        }
+        .cond-grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+        @media (max-width: 600px) { .cond-grid-3 { grid-template-columns: repeat(2,1fr); } }
+        .cond-item {
+            background: var(--card2); border-radius: 8px; padding: 9px 11px;
+        }
+        .cond-lbl { font-size: 10px; color: var(--sub); margin-bottom: 4px; }
+        .cond-val { font-size: 13px; font-weight: 600; color: var(--fg); }
+        .cond-val.ok { color: var(--green); }
+        .cond-val.warn { color: var(--gold); }
 
         /* ═══════════════════════════════════════
            STRATEGY TABS (전략 후보)
@@ -517,8 +577,7 @@
 <!-- ════════════════ HEADER ════════════════ -->
 <header id="app-header">
     <div class="logo-wrap">
-        <img src="data:image/webp;base64,UklGRmAEAABXRUJQVlA4WAoAAAAQAAAAXwAAPwAAQUxQSAcEAAABoAVt2/FIut/v+/902hjbtm3btm3btu2ZI9utsW0bPTa7v4POVE1ms2e7VRExAfwHrWillUfz9EJQ3tx5cjk8k4iIppYx5mcylCeKrakR/S36k2dSwcEh3lpqm1/muydSpHoR9aY/lPv84dubpB4pzc+fpn/Cg0cLxoubWON5FemMMcMzGpMsTlo8sRB32qRhOfS06T4ro8QTxbaadWgKhJ5DuUdcifwRcRlLye9EubCswsY89bLtt4uw3IO4cKtW/ElNPmPuelHDlES7Q3DiMknSP+JwOhwOQEjg9zufDI5YisznL+zE+fC0KNyoGfA0v2g02w+gUVojClBaC5rlT6Nev47anolAsxWN0kpTOiatshVoDfiH/8jsFhHfB7+2E2tnGFrjWgRAaw7eqFC1etu7T4Icg2qiBdBS2qQHBMDR6PmnUijcaNHuQ02TXbRmRygWSauUIG5KIGudCv7YRIYCpDcNSGQBuarmhbIxCTNUzYlPjb4bXpsNKdC4U3FzHXc34YoB0c+eHwg9jN9m8+DtuzoQech2elkBv7ryqyvxwmIefD8ct+SvLVGPzcqgqFeRw9KDxp1aiph80takEAc7IilvBlheg81uVkUXwX+RycqRcIBBJj9fO7Ptcy6d7umU7OZwMtXYVPRVgFK4h11X0T4fF+EVa/MDgKuhDtMfC94uY9/HY6eOnjYzcHxu6WW6oIkbUMzkB16NQmtL4V5Fsuj6wLBvcRU7wjm/R1u2Xh+aMqak0paEniX0Tq/em0xVxP7SJEV0caUVlDZplVaPJ4mN2y3GmFs3bt64Z0bAjkg5ehSHk52hSU1ZbdtEnuBIKHBnN8r+0jSRKa1tDWVMOhRPJmK5TXBEbWnaqnmrxptf+bLjAINNMgj6uEf9mA04vk3n0EHLh2KmNc4PbeTXFCBhquLRaVE8mvAXWLQxGYmd1gxmz+3kgVc+jB19OWo//cyAjMVPvk7KiRNoi6UmmYrpznDTI2O5l3PymXQoXk37CxQbt2FblmWz7pBq+LAZjDx3qu7809Dtydt3EVlgzTq0Un6nJ3K+IQx48ebNSq9811OgONgH7TawEWILlmDj3TcAuLcWG5IEgUIEl04AQSfxAxEA4e8UXAsoxDfix+Y1j19nFKUBpfit4FoDWvhnCohA/TWbxyZBQCxLg7IUICLiAlECyD/iX1M7rBKDS7dITUjzFk1tyjTM0MRHCvZN1lJ7CjQjanQf1RTfbJnnJaLK+FbdAlSDzVmGWR5DSDSxXiunkKNATW/fBaVT9A2gaIRPf0/iM3bcigDKjJjUJI/VrWmF4c7gvqWb9bM9SPz5vbsHkj13jjwpAdo7LYH2ymMA2sdX4VqJACg8sFJKCf/DCABWUDggMgAAAPADAJ0BKmAAQAA+USiSRqOioaEhaABwCglpAAALMiRIkSJEiRIkR9AA/vz4QAAAAAAA"
-             alt="AlgoRich" height="32" width="auto" style="height:32px;width:auto;object-fit:contain">
+        <img src="logo.png" alt="AlgoRich" style="height:40px;width:auto;object-fit:contain">
         <div class="brand">
             AlgoRich
             <small>algorich.everyoungrich.com</small>
@@ -527,6 +586,7 @@
 
     <nav class="main-nav">
         <button class="nav-tab active" data-sec="scan"     onclick="showSection('scan')">오늘의 주도주</button>
+        <button class="nav-tab"        data-sec="history"  onclick="showSection('history')">히스토리</button>
         <button class="nav-tab"        data-sec="strategy" onclick="showSection('strategy')">전략 후보</button>
         <button class="nav-tab"        data-sec="holdings" onclick="showSection('holdings')">보유현황</button>
         <button class="nav-tab"        data-sec="journal"  onclick="showSection('journal')">매매일지</button>
@@ -536,39 +596,65 @@
     <div id="hdr-status">● LOADING</div>
 </header>
 
+<!-- ════════════════ SCAN META BAR ════════════════ -->
+<div class="scan-meta-bar" id="scan-meta-bar">
+    <span style="color:var(--green)">●</span>
+    <span id="scan-meta-text">스캔 데이터 로딩 중...</span>
+</div>
+
 <!-- ════════════════ SUMMARY BAR ════════════════ -->
 <div class="summary-bar">
     <div class="stat-card">
-        <div class="stat-label">관심종목 등록</div>
-        <div class="stat-val" id="sum-scan-cnt">-</div>
-        <div class="stat-sub" id="sum-scan-date"></div>
+        <div class="stat-label">10%↑ 종목</div>
+        <div class="stat-val" id="sum-hot-cnt">-</div>
+        <div class="stat-sub" id="sum-scan-date">거래대금 Top30 기준</div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">현재 보유 종목</div>
-        <div class="stat-val" id="sum-holding-cnt">-</div>
-        <div class="stat-sub" id="sum-holding-sub"></div>
+        <div class="stat-label">NH-Hunter</div>
+        <div class="stat-val" id="sum-nh-cnt" style="color:#c084fc">-</div>
+        <div class="stat-sub">신고가 90%이내 · 7일박스 돌파</div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">이달 누적 수익률</div>
-        <div class="stat-val" id="sum-monthly-rt">-</div>
-        <div class="stat-sub" id="sum-monthly-sub"></div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">알고봇 상태</div>
-        <div class="stat-val" style="font-size:16px; color:var(--green); margin-top:3px;">NH-Sniper</div>
-        <div class="stat-sub" id="sum-last-update"></div>
+        <div class="stat-label">S-Class 관심종목</div>
+        <div class="stat-val" id="sum-scan-cnt" style="color:var(--gold)">-</div>
+        <div class="stat-sub">52주 신고가 + 4대 조건</div>
     </div>
 </div>
 
 <!-- ════════════════ SECTION: 오늘의 주도주 ════════════════ -->
 <div class="section active" id="sec-scan">
-    <div class="section-title">
-        📡 오늘의 주도주
-        <span class="cnt">— 거래대금 상위 30 중 상승률 10%↑ · ★ = 관심종목</span>
+    <!-- NH-Hunter 후보 카드 -->
+    <div class="nh-cand-section" id="nh-candidates-wrap" style="display:none">
+        <div class="nh-cand-label">
+            ⭐ NH-Hunter 후보 <span class="badge-nh" id="nh-cand-badge">0종목</span>
+        </div>
+        <div id="nh-candidates"></div>
     </div>
-    <div class="card" style="margin-bottom:14px">
-        <div id="scan-status-line" style="font-size:12px;color:var(--sub);margin-bottom:10px">데이터 로딩 중...</div>
+    <!-- S-Class 관심종목 카드 -->
+    <div class="nh-cand-section" id="s-class-wrap" style="display:none; padding-top:8px;">
+        <div class="nh-cand-label">
+            S-Class 관심종목 <span class="badge-s" id="s-class-badge">0종목</span>
+        </div>
+        <div id="s-class-cards"></div>
+    </div>
+    <!-- 전체 스캔 테이블 -->
+    <div class="section" style="display:block; padding-top:12px;" id="scan-table-wrap">
+        <div class="nh-cand-label" style="margin-bottom:8px;">전체 스캔 결과 <span style="color:var(--sub);font-weight:400" id="scan-table-sub"></span></div>
+        <div id="scan-status-line" style="display:none"></div>
         <div id="scan-audit-table"></div>
+    </div>
+</div>
+
+<!-- ════════════════ SECTION: 히스토리 ════════════════ -->
+<div class="section" id="sec-history">
+    <div class="section-title">
+        📅 히스토리
+        <span class="cnt">— 날짜별 스캔 결과 및 신호 이력</span>
+    </div>
+    <div class="card">
+        <div style="color:var(--sub);font-size:13px;text-align:center;padding:24px 0;">
+            히스토리 뷰 준비 중입니다.
+        </div>
     </div>
 </div>
 
@@ -652,8 +738,7 @@
 <!-- ════════════════ FOOTER ════════════════ -->
 <footer>
     <div style="display:flex; align-items:center; gap:10px;">
-        <img src="data:image/webp;base64,UklGRmAEAABXRUJQVlA4WAoAAAAQAAAAXwAAPwAAQUxQSAcEAAABoAVt2/FIut/v+/902hjbtm3btm3btu2ZI9utsW0bPTa7v4POVE1ms2e7VRExAfwHrWillUfz9EJQ3tx5cjk8k4iIppYx5mcylCeKrakR/S36k2dSwcEh3lpqm1/muydSpHoR9aY/lPv84dubpB4pzc+fpn/Cg0cLxoubWON5FemMMcMzGpMsTlo8sRB32qRhOfS06T4ro8QTxbaadWgKhJ5DuUdcifwRcRlLye9EubCswsY89bLtt4uw3IO4cKtW/ElNPmPuelHDlES7Q3DiMknSP+JwOhwOQEjg9zufDI5YisznL+zE+fC0KNyoGfA0v2g02w+gUVojClBaC5rlT6Nev47anolAsxWN0kpTOiatshVoDfiH/8jsFhHfB7+2E2tnGFrjWgRAaw7eqFC1etu7T4Icg2qiBdBS2qQHBMDR6PmnUijcaNHuQ02TXbRmRygWSauUIG5KIGudCv7YRIYCpDcNSGQBuarmhbIxCTNUzYlPjb4bXpsNKdC4U3FzHXc34YoB0c+eHwg9jN9m8+DtuzoQech2elkBv7ryqyvxwmIefD8ct+SvLVGPzcqgqFeRw9KDxp1aiph80takEAc7IilvBlheg81uVkUXwX+RycqRcIBBJj9fO7Ptcy6d7umU7OZwMtXYVPRVgFK4h11X0T4fF+EVa/MDgKuhDtMfC94uY9/HY6eOnjYzcHxu6WW6oIkbUMzkB16NQmtL4V5Fsuj6wLBvcRU7wjm/R1u2Xh+aMqak0paEniX0Tq/em0xVxP7SJEV0caUVlDZplVaPJ4mN2y3GmFs3bt64Z0bAjkg5ehSHk52hSU1ZbdtEnuBIKHBnN8r+0jSRKa1tDWVMOhRPJmK5TXBEbWnaqnmrxptf+bLjAINNMgj6uEf9mA04vk3n0EHLh2KmNc4PbeTXFCBhquLRaVE8mvAXWLQxGYmd1gxmz+3kgVc+jB19OWo//cyAjMVPvk7KiRNoi6UmmYrpznDTI2O5l3PymXQoXk37CxQbt2FblmWz7pBq+LAZjDx3qu7809Dtydt3EVlgzTq0Un6nJ3K+IQx48ebNSq9811OgONgH7TawEWILlmDj3TcAuLcWG5IEgUIEl04AQSfxAxEA4e8UXAsoxDfix+Y1j19nFKUBpfit4FoDWvhnCohA/TWbxyZBQCxLg7IUICLiAlECyD/iX1M7rBKDS7dITUjzFk1tyjTM0MRHCvZN1lJ7CjQjanQf1RTfbJnnJaLK+FbdAlSDzVmGWR5DSDSxXiunkKNATW/fBaVT9A2gaIRPf0/iM3bcigDKjJjUJI/VrWmF4c7gvqWb9bM9SPz5vbsHkj13jjwpAdo7LYH2ymMA2sdX4VqJACg8sFJKCf/DCABWUDggMgAAAPADAJ0BKmAAQAA+USiSRqOioaEhaABwCglpAAALMiRIkSJEiRIkR9AA/vz4QAAAAAAA"
-             alt="AlgoRich" style="height:22px;width:auto;opacity:0.7;">
+        <img src="logo.png" alt="AlgoRich" style="height:40px;width:auto;object-fit:contain">
         <span class="footer-text"><strong>AlgoRich</strong> | Powered by EverYoungRich</span>
     </div>
     <span class="footer-text" id="last-update">업데이트 확인 중...</span>
@@ -857,13 +942,14 @@ function stratPill(name) {
 // 데이터 로딩
 // ═══════════════════════════════════════════════════════════
 async function updateDashboard() {
-    const [leadRes, tradeRes, scanRes] = await Promise.allSettled([
+    const [leadRes, tradeRes, scanRes, nhRes] = await Promise.allSettled([
         fetch(API_URL + '?type=lead').then(r => { if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); }),
         fetch(API_URL + '?type=trades').then(r => { if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); }),
         fetch(API_URL + '?type=scan').then(r => { if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); }),
+        fetch(API_URL + '?type=nh_hunter').then(r => { if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); }),
     ]);
 
-    let leadRows = [], tradeRows = [], scanData = null;
+    let leadRows = [], tradeRows = [], scanData = null, nhData = null;
 
     if (leadRes.status === 'fulfilled' && leadRes.value?.status === 'ok')
         leadRows = leadRes.value.leadStocks || [];
@@ -877,10 +963,20 @@ async function updateDashboard() {
         scanData = scanRes.value.scanTable || null;
     else console.warn('[AR] scan API 실패:', scanRes.reason?.message || scanRes.value?.error);
 
+    if (nhRes.status === 'fulfilled' && nhRes.value?.status === 'ok')
+        nhData = nhRes.value.nhHunter || null;
+    else console.warn('[AR] nh_hunter API 실패:', nhRes.reason?.message || nhRes.value?.error);
+
+    // NH-Hunter 룩업맵: "날짜_종목코드" → row
+    const nhMap = {};
+    if (nhData && nhData.rows) {
+        nhData.rows.forEach(r => { nhMap[r.date + '_' + r.code] = r; });
+    }
+
     _allTradeRows = tradeRows;
     buildHoldingsMap(tradeRows);
     renderSummary(leadRows, tradeRows);
-    renderScanTable(scanData);
+    renderScanTable(scanData, nhMap);
     renderLeadStocks(leadRows);
     renderStratCandidates(leadRows);
     renderHoldings(tradeRows);
@@ -905,52 +1001,30 @@ function buildHoldingsMap(rows) {
 // SUMMARY BAR
 // ═══════════════════════════════════════════════════════════
 function renderSummary(leadRows, tradeRows) {
-    // 최근 스캔
+    // S-Class 관심종목 최근일 수
     const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 6);
     const recent = leadRows.filter(r => r.date && r.date >= cutoff.toISOString().slice(0,10));
     const latestDate = recent.reduce((a,b) => (b.date||'') > a ? (b.date||'') : a, '');
     const latestCnt  = latestDate ? recent.filter(r => r.date === latestDate).length : 0;
-    document.getElementById('sum-scan-cnt').textContent  = latestCnt || '-';
-    document.getElementById('sum-scan-date').textContent = latestDate ? '기준 ' + latestDate : '';
-
-    // 보유
-    const holding = tradeRows.filter(r => r.status === '보유');
-    document.getElementById('sum-holding-cnt').textContent = holding.length;
-    const stratCounts = {};
-    holding.forEach(r => { stratCounts[r.strategy||'미분류'] = (stratCounts[r.strategy||'미분류']||0)+1; });
-    const stratSummary = Object.entries(stratCounts).map(([k,v]) => k+' '+v).join(' · ');
-    document.getElementById('sum-holding-sub').textContent = stratSummary || '없음';
-
-    // 이달 수익률
-    const mm   = todayStr().slice(0,7);
-    const done = tradeRows.filter(r => r.status === '완료' && String(r.sellDate||'').startsWith(mm));
-    if (done.length) {
-        const avg = done.reduce((s,r) => s + (r.profitRt||0), 0) / done.length;
-        const el  = document.getElementById('sum-monthly-rt');
-        el.textContent = fmtPct(avg);
-        el.className   = 'stat-val ' + (avg >= 0 ? 'up' : 'down');
-        document.getElementById('sum-monthly-sub').textContent = done.length + '건 완료';
-    } else {
-        document.getElementById('sum-monthly-rt').textContent = '-';
-        document.getElementById('sum-monthly-sub').textContent = '완료 거래 없음';
-    }
+    document.getElementById('sum-scan-cnt').textContent = latestCnt || '-';
+    document.getElementById('sum-scan-date').textContent = latestDate ? '기준 ' + latestDate : '거래대금 Top30 기준';
 }
 
 // ═══════════════════════════════════════════════════════════
-// 오늘의 주도주 표 (Section 1 상단) — scan audit 기반
+// 오늘의 주도주 — scan audit + NH-Hunter 통합 렌더
 // ═══════════════════════════════════════════════════════════
-function renderScanTable(scanData) {
-    const statusEl = document.getElementById('scan-status-line');
-    const tableEl  = document.getElementById('scan-audit-table');
-    if (!statusEl || !tableEl) return;
+function renderScanTable(scanData, nhMap) {
+    nhMap = nhMap || {};
+    const tableEl = document.getElementById('scan-audit-table');
+    if (!tableEl) return;
 
     if (!scanData || !scanData.rows || !scanData.rows.length) {
-        statusEl.innerHTML = '<span style="color:var(--sub)">●</span> 스캔 데이터 없음';
-        tableEl.innerHTML  = '<div class="empty-state">스캔 audit 기록이 없습니다.</div>';
+        document.getElementById('scan-meta-text').textContent = '스캔 데이터 없음';
+        tableEl.innerHTML = '<div class="empty-state">스캔 audit 기록이 없습니다.</div>';
         return;
     }
 
-    // 날짜별 그룹 → 최근 5일
+    // ── 날짜별 그룹 → 최근 5일 ──
     const byDate = new Map();
     scanData.rows.forEach(r => {
         if (!r.date) return;
@@ -958,73 +1032,146 @@ function renderScanTable(scanData) {
         byDate.get(r.date).push(r);
     });
     const dates = [...byDate.keys()].sort((a,b) => b.localeCompare(a)).slice(0, 5);
-
-    // ── 상태줄 (최신 스캔 기준) ──
-    const last = scanData.lastScan;
     const latestDate = dates[0];
     const latestAll  = byDate.get(latestDate) || [];
     const latestHot  = latestAll.filter(r => (r.changeRate||0) >= 10.0);
-    const stars      = latestHot.filter(r => r.result === 'PASS').length;
-    // 주도테마: 10%+ 종목 섹터 최빈값
+    const last       = scanData.lastScan;
+    const scannedN   = (last && last.date === latestDate) ? last.scanned : latestAll.length;
+
+    // ── 섹터 테마 ──
     const secCount = {};
     latestHot.forEach(r => { const s = getSector(r.name||''); if (s) secCount[s] = (secCount[s]||0)+1; });
     const topSec = Object.entries(secCount).sort((a,b) => b[1]-a[1])[0];
-    const themeTxt = (topSec && latestHot.length)
-        ? ' · 주도테마: <span style="color:var(--green)">' + esc(topSec[0]) + '</span> (' + latestHot.length + '종목 중 ' + topSec[1] + ')'
-        : '';
-    const scannedN = (last && last.date === latestDate) ? last.scanned : latestAll.length;
-    statusEl.innerHTML = '<span style="color:var(--green)">●</span> ' + esc(latestDate)
-        + ' 15:30 스캔 · ' + scannedN + '종목 심사' + themeTxt
-        + ' · 관심종목 <span style="color:var(--gold)">' + stars + '종목</span>';
+    const themeTxt = topSec ? ' · 주도테마: <b style="color:var(--green)">' + esc(topSec[0]) + '</b>' : '';
 
-    // ── 날짜별 표 ──
+    // ── 집계 ──
+    const sClassCnt = latestHot.filter(r => r.result === 'PASS').length;
+    const nhCandRows = latestHot.filter(r => {
+        const nh = nhMap[latestDate + '_' + String(r.code||'').padStart(6,'0')];
+        return nh && nh.result === 'PASS';
+    });
+
+    // ── 스캔 메타 바 ──
+    document.getElementById('scan-meta-text').innerHTML =
+        esc(latestDate) + ' 15:30 스캔 완료 &nbsp;·&nbsp; 거래대금 Top30 중 상승률 10%↑' + themeTxt;
+
+    // ── 요약 카운트 업데이트 ──
+    document.getElementById('sum-hot-cnt').textContent = latestHot.length || '-';
+    document.getElementById('sum-nh-cnt').textContent  = nhCandRows.length || '-';
+    // sum-scan-cnt는 renderSummary에서 처리 (S-Class)
+
+    // ── NH-Hunter 후보 카드 ──
+    const nhWrap = document.getElementById('nh-candidates-wrap');
+    const nhEl   = document.getElementById('nh-candidates');
+    document.getElementById('nh-cand-badge').textContent = nhCandRows.length + '종목';
+    if (nhCandRows.length > 0) {
+        nhWrap.style.display = '';
+        nhEl.innerHTML = nhCandRows.map(r => {
+            const code  = esc(String(r.code||'').padStart(6,'0'));
+            const nhRow = nhMap[latestDate + '_' + code];
+            const vr    = r.volRatio || 0;
+            const items = [
+                { lbl:'거래대금 (순위)',   val: fmtAmt(r.amt100m), ok: true },
+                { lbl:'상승률',           val: fmtPct(r.changeRate||0), ok: (r.changeRate||0) >= 10 },
+                { lbl:'거래량 전일비',    val: vr.toFixed(0) + '%', ok: vr >= 150 },
+                { lbl:'52주 신고가 이격', val: (nhRow && nhRow.h52GapPct ? nhRow.h52GapPct.toFixed(1) + '%' : '-'), ok: nhRow && nhRow.condNh90 === 'Y' },
+                { lbl:'7일 고가 이격',    val: (nhRow && nhRow.h7dGapPct != null ? (nhRow.h7dGapPct >= 0 ? '+' : '') + nhRow.h7dGapPct.toFixed(1) + '%' : '-'), ok: nhRow && nhRow.condBox7 === 'Y' },
+                { lbl:'윗꼬리',           val: (nhRow && nhRow.wickPct != null ? nhRow.wickPct.toFixed(1) + '%' : '-'), ok: nhRow && nhRow.condWick3 === 'Y' },
+            ];
+            const gridHtml = items.map(it =>
+                '<div class="cond-item"><div class="cond-lbl">' + it.lbl + '</div>'
+                + '<div class="cond-val ' + (it.ok ? 'ok' : 'warn') + '">' + it.val + '</div></div>'
+            ).join('');
+            return '<div class="nh-cand-card">'
+                + '<div class="cand-hdr"><div><div class="cand-name">' + esc(r.name||'') + '</div>'
+                + '<div class="cand-code">' + code + ' · ' + (getSector(r.name||'')||'') + '</div></div>'
+                + '<span class="cand-tag-nh">🎯 NH-Hunter PASS</span></div>'
+                + '<div class="cond-grid-3">' + gridHtml + '</div></div>';
+        }).join('');
+    } else {
+        nhWrap.style.display = 'none';
+    }
+
+    // ── S-Class 컴팩트 카드 ──
+    const sWrap    = document.getElementById('s-class-wrap');
+    const sCardsEl = document.getElementById('s-class-cards');
+    document.getElementById('s-class-badge').textContent = sClassCnt + '종목';
+    const sClassRows = latestHot.filter(r => r.result === 'PASS');
+    if (sClassRows.length > 0) {
+        sWrap.style.display = '';
+        sCardsEl.innerHTML = sClassRows.map(r => {
+            const code = esc(String(r.code||'').padStart(6,'0'));
+            const vr   = r.volRatio || 0;
+            return '<div class="s-cand-card">'
+                + '<div><div style="font-size:14px;font-weight:700">' + esc(r.name||'') + ' <span style="color:var(--gold);font-size:11px">★</span></div>'
+                + '<div style="font-size:10px;color:var(--sub);margin-top:2px">' + code + ' · ' + (getSector(r.name||'')||'') + '</div></div>'
+                + '<div style="display:flex;gap:14px;font-size:12px;align-items:center">'
+                + '<span>' + fmtAmt(r.amt100m) + '</span>'
+                + '<span class="up">' + fmtPct(r.changeRate||0) + '</span>'
+                + '<span style="color:' + (vr>=200?'var(--green)':'var(--gold)') + '">' + vr.toFixed(0) + '%</span>'
+                + '<span style="color:var(--green);font-size:11px">52주 신고가</span>'
+                + '</div>'
+                + '<span class="cand-tag-s">★ S-Class</span></div>';
+        }).join('');
+    } else {
+        sWrap.style.display = 'none';
+    }
+
+    // ── 전체 스캔 테이블 ──
+    document.getElementById('scan-table-sub').textContent =
+        '(상승률 10%↑ ' + latestHot.length + '종목 · ' + scannedN + '종목 심사)';
+
     tableEl.innerHTML = dates.map(date => {
         const all = [...byDate.get(date)].sort((a,b) => (b.amt100m||0) - (a.amt100m||0));
         const rankMap = {};
-        all.forEach((r, i) => { rankMap[r.code] = i + 1; });   // 당일 심사 30종목 내 거래대금 순위
+        all.forEach((r, i) => { rankMap[r.code] = i + 1; });
         const hot = all.filter(r => (r.changeRate||0) >= 10.0);
 
-        let body;
-        if (!hot.length) {
-            body = '<tr><td colspan="8" style="text-align:center;color:var(--sub);padding:14px">상승률 10% 이상 종목 없음</td></tr>';
-        } else {
-            body = hot.map(r => {
-                const code   = esc(String(r.code||'').replace(/[^0-9A-Za-z]/g,''));
-                const sector = getSector(r.name||'');
-                const secTag = sector ? '<span class="sec-tag">' + esc(sector) + '</span>' : '<span style="color:var(--sub);font-size:10px">-</span>';
-                const vr     = r.volRatio || 0;
-                const volOk  = vr >= 200.0;
-                const volHtml = volOk
-                    ? '<span style="color:var(--green)">' + vr.toFixed(0) + '% ✓</span>'
-                    : '<span style="color:var(--gold)">' + vr.toFixed(0) + '%</span>';
-                const nh = r.newHigh === 'Y' ? '<span style="color:var(--green)">O</span>'
-                         : r.newHigh === 'N' ? '<span style="color:var(--sub)">X</span>'
-                         : '<span style="color:var(--sub)" title="미검증">–</span>';
-                const isStar = r.result === 'PASS';
-                const condBadges = '<span class="cond-chip chip-top30">TOP30</span> '
-                    + '<span class="cond-chip chip-rate">+10%↑</span>'
-                    + (isStar ? ' <span class="cond-chip chip-star">★ 관심</span>' : '');
-                const rowStyle = isStar
-                    ? ' style="background:rgba(240,165,0,0.06);border-left:3px solid rgba(240,165,0,0.5)"'
+        const body = hot.length ? hot.map(r => {
+            const code   = esc(String(r.code||'').replace(/[^0-9A-Za-z]/g,''));
+            const sector = getSector(r.name||'');
+            const secTag = sector ? '<span class="sec-tag">' + esc(sector) + '</span>' : '<span style="color:var(--sub);font-size:10px">-</span>';
+            const vr     = r.volRatio || 0;
+            const volHtml = vr >= 200
+                ? '<span style="color:var(--green)">' + vr.toFixed(0) + '% ✓</span>'
+                : '<span style="color:var(--gold)">' + vr.toFixed(0) + '%</span>';
+            const nhHighStr = r.newHigh === 'Y' ? '<span style="color:var(--green)">O</span>'
+                            : r.newHigh === 'N' ? '<span style="color:var(--sub)">X</span>'
+                            : '<span style="color:var(--sub)">–</span>';
+            const isStar = r.result === 'PASS';
+            const nhRow  = nhMap[date + '_' + String(r.code||'').padStart(6,'0')];
+            let nhBadge;
+            if (!nhRow) {
+                nhBadge = '<span class="nh-fail">–</span>';
+            } else if (nhRow.result === 'PASS') {
+                nhBadge = '<span class="cond-chip chip-nh">🎯 NH-Hunter</span>';
+            } else {
+                const shortR = ((nhRow.failReason||'').split(',')[0]||'').trim() || 'FAIL';
+                nhBadge = '<span class="nh-fail" title="' + esc(nhRow.failReason||'') + '">' + esc(shortR) + '</span>';
+            }
+            const rowStyle = nhRow && nhRow.result === 'PASS'
+                ? ' style="background:rgba(168,85,247,0.06);border-left:3px solid rgba(168,85,247,0.5)"'
+                : isStar
+                    ? ' style="background:rgba(240,165,0,0.04);border-left:3px solid rgba(240,165,0,0.4)"'
                     : ' style="border-left:3px solid transparent"';
-                return '<tr class="lead-row"' + rowStyle + ' data-code="' + code + '" data-name="' + esc(r.name||'') + '" data-price="0" data-rate="' + (r.changeRate||0) + '" data-amt="' + (r.amt100m||0) + '" data-date="' + esc(date) + '">'
-                    + '<td style="color:var(--sub);text-align:left;padding-left:8px">' + (rankMap[r.code]||'-') + '</td>'
-                    + '<td style="text-align:left"><div>' + esc(r.name||'') + '</div><div class="sub-text">' + code + '</div></td>'
-                    + '<td style="text-align:left">' + secTag + '</td>'
-                    + '<td style="text-align:right">' + fmtAmt(r.amt100m) + '</td>'
-                    + '<td style="text-align:right"><span class="' + ((r.changeRate||0) >= 0 ? 'up' : 'down') + '">' + fmtPct(r.changeRate||0) + '</span></td>'
-                    + '<td style="text-align:right">' + volHtml + '</td>'
-                    + '<td style="text-align:center">' + nh + '</td>'
-                    + '<td style="text-align:right;padding-right:10px">' + condBadges + '</td></tr>';
-            }).join('');
-        }
+            return '<tr class="lead-row"' + rowStyle + ' data-code="' + code + '" data-name="' + esc(r.name||'') + '" data-price="0" data-rate="' + (r.changeRate||0) + '" data-amt="' + (r.amt100m||0) + '" data-date="' + esc(date) + '">'
+                + '<td style="color:var(--sub);text-align:left;padding-left:8px">' + (rankMap[r.code]||'-') + '</td>'
+                + '<td style="text-align:left"><div>' + esc(r.name||'') + (isStar ? ' <span style="color:var(--gold);font-size:10px">★</span>' : '') + '</div><div class="sub-text">' + code + '</div></td>'
+                + '<td style="text-align:left">' + secTag + '</td>'
+                + '<td style="text-align:right">' + fmtAmt(r.amt100m) + '</td>'
+                + '<td style="text-align:right"><span class="' + ((r.changeRate||0) >= 0 ? 'up' : 'down') + '">' + fmtPct(r.changeRate||0) + '</span></td>'
+                + '<td style="text-align:right">' + volHtml + '</td>'
+                + '<td style="text-align:center">' + nhHighStr + '</td>'
+                + '<td style="text-align:right;padding-right:10px">' + nhBadge + '</td></tr>';
+        }).join('')
+        : '<tr><td colspan="8" style="text-align:center;color:var(--sub);padding:14px">상승률 10% 이상 종목 없음</td></tr>';
 
         return '<div class="date-group">'
             + '<div class="dg-hdr">📅 ' + esc(date) + ' · 급등 ' + hot.length + '종목<span class="dg-line"></span></div>'
-            + '<table class="tbl"><colgroup><col style="width:8%"><col style="width:17%"><col style="width:11%"><col style="width:12%"><col style="width:10%"><col style="width:12%"><col style="width:8%"><col style="width:22%"></colgroup>'
+            + '<table class="tbl"><colgroup><col style="width:6%"><col style="width:18%"><col style="width:11%"><col style="width:12%"><col style="width:10%"><col style="width:13%"><col style="width:7%"><col style="width:23%"></colgroup>'
             + '<thead><tr><th style="text-align:left;padding-left:8px">거래대금 순위</th><th style="text-align:left">종목명</th><th style="text-align:left">섹터</th>'
             + '<th style="text-align:right">거래대금</th><th style="text-align:right">등락률</th><th style="text-align:right">거래량 전일비</th>'
-            + '<th>신고가</th><th style="text-align:right;padding-right:10px">선정 조건</th></tr></thead>'
+            + '<th>신고가</th><th style="text-align:right;padding-right:10px">NH-Hunter</th></tr></thead>'
             + '<tbody>' + body + '</tbody></table></div>';
     }).join('');
 }
@@ -1832,165 +1979,4 @@ function _updateModalHeader(info) {
     const warnEl = document.getElementById('modal-warn-badge');
     if (warnEl) {
         let badge = '';
-        if (info.isMgmt)          badge += '<span style="background:rgba(255,77,77,.18);color:#ff4d4d;border:1px solid rgba(255,77,77,.4);border-radius:4px;font-size:10px;padding:2px 6px;font-weight:700;margin-right:4px">관리종목</span>';
-        if (info.warnLabel)       badge += '<span style="background:rgba(255,140,0,.15);color:#f0a500;border:1px solid rgba(255,140,0,.4);border-radius:4px;font-size:10px;padding:2px 6px;margin-right:4px">⚠ '+info.warnLabel+'</span>';
-        warnEl.innerHTML = badge;
-    }
-}
-function _renderInfoGrid(info) {
-    const highs = _currentCnds.map(d=>d.high).filter(v=>v>0);
-    const lows  = _currentCnds.map(d=>d.low).filter(v=>v>0);
-    const h52 = highs.length?Math.max(...highs):0, l52 = lows.length?Math.min(...lows):0;
-    const mcB = info.marketCapB||0;
-    let mcStr = '-';
-    if (mcB>0) { const jo=Math.floor(mcB/10000),eok=mcB%10000; mcStr=jo>0?jo+'조'+(eok>0?' '+eok+'억':''):mcB+'억'; }
-    // current_amt_100m: 마지막 영업일 거래대금 (억) — GAS inquire-price(FHKST01010100) 기준
-    const current_amt_100m = info.current_amt_100m || 0;
-    const today            = info.dataDate || '-';
-
-    // 모달 거래대금: 마지막 영업일 기준 (KIS inquire-price 당일 누적)
-    const tvStr = current_amt_100m > 0
-        ? fmtAmt(current_amt_100m) + '<br><span style="font-size:10px;color:var(--sub)">' + today + ' 기준</span>'
-        : '-';
-
-    // PER·PBR: 0이면 "N/A" (적자·신규상장), 양수면 소수 1자리
-    const perStr = info.per > 0  ? Number(info.per).toFixed(1) + 'x'
-                 : info.per < 0  ? 'N/A (적자)'
-                 : 'N/A';
-    const pbrStr = info.pbr > 0  ? Number(info.pbr).toFixed(1) + 'x' : 'N/A';
-    const epsStr = info.eps && info.eps !== 0 ? fmtNum(Math.round(info.eps)) + '원' : '-';
-    const bpsStr = info.bps && info.bps >  0 ? fmtNum(Math.round(info.bps)) + '원' : '-';
-
-    const items = [
-        {label:'전일종가', val:fmtNum(info.prevClose||0)+'원'},
-        {label:'시가',     val:fmtNum(info.open||0)+'원'},
-        {label:'고가',     val:fmtNum(info.high||0)+'원',   cls:'up'},
-        {label:'저가',     val:fmtNum(info.low||0)+'원',    cls:'down'},
-        {label:'거래량',   val:info.volume>0 ? fmtNum(info.volume)+'주' : '-'},
-        {label:'거래대금', val:tvStr},
-        {label:'시총',     val:mcStr},
-        {label:'PER / PBR',val: perStr + ' / ' + pbrStr},
-        {label:'EPS / BPS',val: epsStr + ' / ' + bpsStr},
-        {label:'52주 최고',val:h52>0 ? fmtNum(h52)+'원' : '-', cls:'up'},
-        {label:'52주 최저',val:l52>0 ? fmtNum(l52)+'원' : '-', cls:'down'},
-        {label:'시장',     val: (info.market||'-') + (info.isMgmt?' <span style="color:#ff4d4d;font-size:10px">[관리]</span>':'' )},
-    ];
-    const dateNote = today !== '-'
-        ? '📅 기준일: ' + today + ' (마지막 영업일 · KIS inquire-price)'
-        : '📅 기준일 확인 불가 (KIS 응답 없음)';
-    const errNote = info._priceErr
-        ? '<div style="grid-column:span 4;font-size:10px;color:#ff6b6b;margin-bottom:4px">⚠ 일부 데이터 오류: ' + info._priceErr + '</div>'
-        : '';
-    document.getElementById('modal-info-grid').innerHTML =
-        '<div style="grid-column:span 4;font-size:10px;color:var(--sub);margin-bottom:4px">' + dateNote + '</div>' +
-        errNote +
-        items.map(it =>
-            '<div class="info-item"><span class="info-label">'+it.label+'</span><span class="info-val'+(it.cls?' '+it.cls:'')+'">'+it.val+'</span></div>'
-        ).join('');
-}
-function _renderInfoGridFallback(price) {
-    document.getElementById('modal-info-grid').innerHTML =
-        '<div class="info-item"><span class="info-label">현재가</span><span class="info-val">'+fmtNum(price)+'원</span></div>' +
-        '<div class="info-item" style="grid-column:span 3"><span class="info-label" style="color:var(--sub)">실시간 데이터를 가져올 수 없습니다</span></div>';
-}
-function _renderSupply(info) {
-    // 백만원 → 억원 표시 (부호·색상 포함)
-    function fmtAmt_(manwon, small) {
-        if (manwon === null || manwon === undefined || manwon === '') return '<span style="color:var(--sub)">-</span>';
-        const v = Number(manwon);
-        if (v === 0) return '<span style="color:var(--sub)">0</span>';
-        const sign = v >= 0 ? '+' : '';
-        const cls  = v > 0 ? 'up' : 'down';
-        const eok  = v / 100;
-        const disp = Math.abs(eok) >= 1
-            ? sign + eok.toFixed(1) + '억'
-            : sign + v.toFixed(0) + '백만';
-        const sz = small ? 'font-size:11px;' : '';
-        return '<span class="supply-val ' + cls + '" style="' + sz + '">' + disp + '</span>';
-    }
-    // 세부 항목 한 줄 (값 0이면 숨김)
-    function subRow(label, val) {
-        if (!val) return '';
-        const sign = val > 0 ? '+' : '';
-        const eok  = (val / 100);
-        const disp = Math.abs(eok) >= 1 ? sign + eok.toFixed(1) + '억' : sign + val.toFixed(0) + '백만';
-        const cls  = val > 0 ? 'color:#00ffa3' : 'color:#ff4d4d';
-        return '<div style="display:flex;justify-content:space-between;padding:3px 0 3px 14px;font-size:11px;border-top:1px solid rgba(255,255,255,.04)">'
-            + '<span style="color:var(--sub)">' + label + '</span>'
-            + '<span style="' + cls + ';font-weight:600">' + disp + '</span></div>';
-    }
-
-    const today = info.dataDate || '-';
-    const supplyDateNote = today !== '-'
-        ? '📅 기준일: ' + today + ' (마지막 영업일 · KIS inquire-investor)'
-        : '📅 기준일 확인 불가';
-    const supplyErrNote = info._invErr
-        ? '<div style="font-size:10px;color:#ff6b6b;margin-bottom:4px">⚠ 수급 데이터 오류: ' + info._invErr + '</div>'
-        : '';
-
-    // 기관 세부 서브행 (값이 있는 항목만 표시)
-    const instSubs = [
-        subRow('금융투자', info.fnncNetAmt),
-        subRow('투신',     info.ivtrNetAmt),
-        subRow('사모',     info.prvtNetAmt),
-        subRow('보험',     info.insrcNetAmt),
-        subRow('은행',     info.bankNetAmt),
-        subRow('사업법인', info.bsnsNetAmt),
-        subRow('기타법인', info.etcNetAmt),
-    ].join('');
-
-    function mainRow(label, amt, subs) {
-        return '<div class="supply-row" style="flex-direction:column;align-items:stretch;">' +
-            '<div style="display:flex;justify-content:space-between;align-items:center">' +
-            '<span class="supply-label">' + label + '</span>' +
-            '<div style="text-align:right">' + fmtAmt_(amt) + '</div>' +
-            '</div>' +
-            (subs || '') +
-            '</div>';
-    }
-
-    document.getElementById('modal-supply-rows').innerHTML =
-        '<div style="font-size:10px;color:var(--sub);margin-bottom:8px">' + supplyDateNote + '</div>' +
-        supplyErrNote +
-        mainRow('기관',   info.instNetAmt, instSubs) +
-        mainRow('외국인', info.frnNetAmt,  '') +
-        mainRow('개인',   info.indvNetAmt, '');
-}
-function _destroyChart() {
-    if (_chart) {
-        const prev = document.querySelector('#chart-wrap > div:not(#chart-msg)');
-        if (prev && prev._onResize) window.removeEventListener('resize', prev._onResize);
-        _chart.remove(); _chart = null;
-    }
-    _maSeries = {}; _currentCnds = [];
-    Array.from(document.getElementById('chart-wrap').children).forEach(el => { if (el.id!=='chart-msg') el.remove(); });
-    const msgEl = document.getElementById('chart-msg');
-    if (msgEl) msgEl.style.display = 'flex';
-}
-function closeChart() { document.getElementById('chart-overlay').style.display = 'none'; _destroyChart(); }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChart(); });
-document.getElementById('chart-overlay').addEventListener('click', function(e) { if (e.target === this) closeChart(); });
-
-function _delegateRowClick(containerId) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    container.addEventListener('click', e => {
-        const tr = e.target.closest('tr[data-code]');
-        if (!tr) return;
-        openChartModal(tr.dataset.code||'', tr.dataset.name||'', parseFloat(tr.dataset.price)||0,
-            parseFloat(tr.dataset.rate)||0, parseFloat(tr.dataset.buyPrice)||0,
-            parseFloat(tr.dataset.sellPrice)||0, tr.dataset.strategy||'',
-            parseInt(tr.dataset.amt)||0, tr.dataset.date||'');
-    });
-}
-_delegateRowClick('scan-audit-table');
-_delegateRowClick('lead-stock-table');
-_delegateRowClick('holdings-table');
-_delegateRowClick('journal-table');
-
-updateDashboard();
-setInterval(updateDashboard, 60000);
-</script>
-</body>
-</html>
-<!-- test_sync -->
+        if (info.isMgmt)          badge += '<span style="background:rgba(255,77,77,.18);color:#ff4d4d;border:1px solid rgba(255,77,77,.4);border-radius:4px;f

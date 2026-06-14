@@ -86,6 +86,60 @@ class GoogleSheetsManager:
         "10%상승통과", "거래량200%통과", "52주신고가통과", "최종선정",
     ]
 
+    NH_HUNTER_SHEET_HEADER = [
+        "날짜", "종목코드", "종목명",
+        "거래대금순위", "거래대금(억)",
+        "상승률(%)", "거래량비(%)",
+        "52주최고가", "52주고가이격률(%)",
+        "최근7일고가", "7일고가이격률(%)",
+        "윗꼬리비율(%)",
+        "TOP30", "상승10%", "신고가90%", "7일박스", "윗꼬리3%", "거래량150%",
+        "통과여부", "탈락사유",
+    ]
+
+    def get_nh_hunter_sheet(self):
+        try:
+            return self.log_wb.worksheet("NH_Hunter_Audit")
+        except gspread.exceptions.WorksheetNotFound:
+            ws = self.log_wb.add_worksheet(title="NH_Hunter_Audit", rows=5000, cols=21)
+            ws.append_row(self.NH_HUNTER_SHEET_HEADER)
+            return ws
+
+    def log_nh_hunter_batch(self, date_str, entries):
+        """NH_Hunter_Audit 시트에 NH-Hunter 평가 결과 배치 기록."""
+        if not self.initialized or not entries:
+            return
+        try:
+            sheet = self.get_nh_hunter_sheet()
+            rows = []
+            for e in entries:
+                nh = e.get("nh_hunter", {})
+                rows.append([
+                    date_str,
+                    e.get("code", ""),
+                    e.get("name", ""),
+                    e.get("mkt_rank", ""),
+                    e.get("amt_100m", ""),
+                    round(float(e.get("change_rate", 0)), 2),
+                    round(float(e.get("vol_ratio",   0)), 1),
+                    nh.get("h52", ""),
+                    nh.get("h52_gap_pct", ""),
+                    nh.get("h7d", ""),
+                    nh.get("h7d_gap_pct", ""),
+                    nh.get("wick_pct", ""),
+                    "Y" if nh.get("cond_top30")  else "N",
+                    "Y" if nh.get("cond_rate10") else "N",
+                    "Y" if nh.get("cond_nh90")   else "N",
+                    "Y" if nh.get("cond_box7")   else "N",
+                    "Y" if nh.get("cond_wick3")  else "N",
+                    "Y" if nh.get("cond_vol150") else "N",
+                    "PASS" if nh.get("pass_all") else "FAIL",
+                    ", ".join(nh.get("fail_reasons", [])),
+                ])
+            sheet.append_rows(rows, value_input_option="USER_ENTERED")
+        except Exception as ex:
+            write_log(f"[log_nh_hunter_batch 오류] {repr(ex)}")
+
     def get_log_sheet(self, tab_name="0_주도주_Log"):
         try:
             return self.log_wb.worksheet(tab_name)
@@ -245,6 +299,8 @@ class GoogleSheetsManager:
                     if buy_qty == 0: continue
                     
                     sell_amt = sell_price * sell_qty
+                    invest_amt = buy_price * sell_qty
+                    
                     invest_amt = buy_price * sell_qty
                     
                     fee_tax_amt = sell_amt * 0.0022
