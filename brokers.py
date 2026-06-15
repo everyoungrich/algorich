@@ -662,6 +662,7 @@ class KISBroker(BaseBroker):
                 "new_high": "-", "leader_score": "-",
                 "result": "PASS" if not fail_reason else "FAIL",
                 "fail_reason": fail_reason,
+                "mkt_rank": mkt_rank,   # TOP30 실제 순위 보존
             }
 
             if not fail_reason:
@@ -768,7 +769,7 @@ class KISBroker(BaseBroker):
             cand     = cand_by_code.get(code)
             vol_rate = cand.get("vol_rate", 0)   if cand else float(entry.get("vol_ratio", 0))
             p_rate   = cand.get("price_rate", 0) if cand else float(entry.get("change_rate", 0))
-            mkt_rank = cand.get("mkt_rank", 99)  if cand else 99
+            mkt_rank = entry.get("mkt_rank", cand.get("mkt_rank", 99) if cand else 99)
 
             nh = self.evaluate_nh_hunter(
                 df=df, vol_ratio=vol_rate, price_rate=p_rate, amt_rank=mkt_rank
