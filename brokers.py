@@ -336,31 +336,50 @@ class KISBroker(BaseBroker):
             write_log(f"[에러] 52주 신고가 검증 중 차트 데이터 오류: {e}")
             return False
 
-    def evaluate_nh_hunter(self, df, vol_ratio: float, price_rate: float, amt_rank: int) -> dict:
+    def evaluate_nh_hunter(self, df, vol_ratio: float, price_rate: float, amt_rank: int,
+                           sector: str = "기타", sector_rank: int = 0,
+                           leading_sector_cnt: int = 0) -> dict:
         """
-        NH-Hunter V1 조건 평가 (Audit 전용 — 실매매 없음).
+        NH-Hunter V1.1 조건 평가 (Audit 전용 — 실매매 없음).
 
-        조건:
-          1. 거래대금 TOP30
-          2. 상승률 ≥ 10%
-          3. 52주 신고가 근접: today_close ≥ 52w_high × 0.97
-          4. 7일 전고점 돌파: 7d_high < today_close ≤ 7d_high × 1.10
-          5. 윗꼬리 ≤ 3%: (today_high − today_close) / today_high × 100
-          6. 거래량비 ≥ 150%
+        조건 (AND):
+          H1. 거래대금 TOP30
+          H2. 상승률 ≥ 10%
+          H3. 52주 신고가 근접: today_close ≥ 52w_high × 0.90 (신고가 -10% 이내)
+          H4. 7일 전고점 돌파: 7d_high < today_close ≤ 7d_high × 1.10
+          H5. 윗꼬리 ≤ 3%: (today_high − today_close) / today_high × 100
+          H6. 거래량비 ≥ 150%
+          H7. 주도 섹터 포함: TOP30 동일 섹터 3종목 이상 +5% 상승
+
+        상한가 제외: price_rate ≥ 29.5% → is_upper_limit=True → pass_all=False
+        후발주 플래그: is_sector_fallback (외부에서 scan_s_class_targets가 설정)
 
         반환: dict with keys:
-          cond_top30, cond_rate10, cond_nh97, cond_box7, cond_wick3, cond_vol150,
-          pass_all, fail_reasons,
-          h52, h52_gap_pct, h7d, h7d_gap_pct, wick_pct
+          cond_top30, cond_rate10, cond_nh90, cond_box7, cond_wick3, cond_vol150,
+          cond_sector, pass_all, fail_reasons,
+          h52, h52_gap_pct, h7d, h7d_gap_pct, wick_pct,
+          sector, sector_rank, leading_sector_cnt, is_upper_limit, is_sector_fallback
         """
         r = {
-            'cond_top30':  False, 'cond_rate10': False,
-            'cond_nh90':   False, 'cond_box7':   False,
-            'cond_wick3':  False, 'cond_vol150':  False,
-            'pass_all':    False, 'fail_reasons': [],
-            'h52': 0, 'h52_gap_pct': 0.0,
-            'h7d': 0, 'h7d_gap_pct': 0.0,
-            'wick_pct': 0.0,
+            'cond_top30':          False,
+            'cond_rate10':         False,
+            'cond_nh90':           False,
+            'cond_box7':           False,
+            'cond_wick3':          False,
+            'cond_vol150':         False,
+            'cond_sector':         False,   # H7
+            'pass_all':            False,
+            'fail_reasons':        [],
+            'h52':                 0,
+            'h52_gap_pct':         0.0,
+            'h7d':                 0,
+            'h7d_gap_pct':         0.0,
+            'wick_pct':            0.0,
+            'sector':              sector,
+            'sector_rank':         sector_rank,
+            'leading_sector_cnt':  leading_sector_cnt,
+            'is_upper_limit':      (price_rate >= 29.5),
+            'is_sector_fallback':  False,   # scan_s_class_targets에서 사후 설정
         }
         if len(df) < 10:
             r['fail_reasons'] = ['일봉 데이터 부족']
@@ -371,13 +390,13 @@ class KISBroker(BaseBroker):
             today_close  = float(curr['clpr'])
             today_high   = float(curr['hgpr'])
 
-            # 조건 1: 거래대금 TOP30
+            # H1: 거래대금 TOP30
             r['cond_top30'] = (amt_rank <= 30)
 
-            # 조건 2: 상승률 ≥ 10%
+            # H2: 상승률 ≥ 10%
             r['cond_rate10'] = (price_rate >= 10.0)
 
-            # 조건 3: 52주 신고가 근접 (today_close ≥ 52w_high × 0.97)
+            # H3: 52주 신고가 근접 (today_close ≥ 52w_high × 0.90)
             prior_h = df['hgpr'].iloc[:-1]
             prior_h_clean = prior_h[prior_h > 0]
             if not prior_h_clean.empty:
@@ -385,9 +404,9 @@ class KISBroker(BaseBroker):
                 r['h52'] = int(h52)
                 if h52 > 0:
                     r['h52_gap_pct'] = round(today_close / h52 * 100, 1)
-                    r['cond_nh90'] = (today_close >= h52 * 0.90)   # 신고가 -10% 이내
+                    r['cond_nh90'] = (today_close >= h52 * 0.90)
 
-            # 조건 4: 7일 전고점 돌파 (7d_high < today_close ≤ 7d_high × 1.10)
+            # H4: 7일 전고점 돌파 (7d_high < today_close ≤ 7d_high × 1.10)
             recent7_h = df['hgpr'].iloc[-8:-1]
             if not recent7_h.empty:
                 h7d = float(recent7_h.max())
@@ -396,23 +415,28 @@ class KISBroker(BaseBroker):
                     r['h7d_gap_pct'] = round((today_close / h7d - 1) * 100, 1)
                     r['cond_box7'] = (today_close > h7d and today_close <= h7d * 1.10)
 
-            # 조건 5: 윗꼬리 ≤ 3%
+            # H5: 윗꼬리 ≤ 3%
             if today_high > 0:
                 wick = (today_high - today_close) / today_high * 100
                 r['wick_pct'] = round(wick, 2)
                 r['cond_wick3'] = (wick <= 3.0)
 
-            # 조건 6: 거래량비 ≥ 150%
+            # H6: 거래량비 ≥ 150%
             r['cond_vol150'] = (vol_ratio >= 150.0)
+
+            # H7: 주도 섹터 포함 (동일 섹터 3종목 이상 +5%)
+            r['cond_sector'] = (leading_sector_cnt >= 3)
 
             # 종합 판정
             fails = []
-            if not r['cond_top30']:  fails.append('TOP30 미진입')
-            if not r['cond_rate10']: fails.append(f'상승률부족({price_rate:.1f}%)')
-            if not r['cond_nh90']:   fails.append(f'52주신고가이격({r["h52_gap_pct"]:.1f}%)')
-            if not r['cond_box7']:   fails.append(f'7일박스미돌파({r["h7d_gap_pct"]:+.1f}%)')
-            if not r['cond_wick3']:  fails.append(f'윗꼬리과다({r["wick_pct"]:.1f}%)')
-            if not r['cond_vol150']: fails.append(f'거래량부족({vol_ratio:.0f}%)')
+            if not r['cond_top30']:   fails.append('TOP30 미진입')
+            if not r['cond_rate10']:  fails.append(f'상승률부족({price_rate:.1f}%)')
+            if not r['cond_nh90']:    fails.append(f'52주신고가이격({r["h52_gap_pct"]:.1f}%)')
+            if not r['cond_box7']:    fails.append(f'7일박스미돌파({r["h7d_gap_pct"]:+.1f}%)')
+            if not r['cond_wick3']:   fails.append(f'윗꼬리과다({r["wick_pct"]:.1f}%)')
+            if not r['cond_vol150']:  fails.append(f'거래량부족({vol_ratio:.0f}%)')
+            if not r['cond_sector']:  fails.append(f'주도섹터미해당({sector})')
+            if r['is_upper_limit']:   fails.append(f'상한가(종가베팅불가,{price_rate:.1f}%)')
             r['fail_reasons'] = fails
             r['pass_all']     = (len(fails) == 0)
 
@@ -421,6 +445,110 @@ class KISBroker(BaseBroker):
             r['fail_reasons'] = [f'평가오류: {e}']
 
         return r
+
+    def get_sector_for_stock(self, code: str) -> str:
+        """
+        종목 업종명 조회 (KIS search-stock-info, TR_ID: CTPF1002R).
+        실패 시 '기타' 반환. 실전 API 사용 (시세조회용).
+        """
+        if not self._get_real_token():
+            return '기타'
+        url = (f"{self.REAL_BASE_URL}/uapi/domestic-stock/v1/quotations"
+               f"/search-stock-info")
+        params = {"PRDT_TYPE_CD": "300", "PDNO": code}
+        res = safe_request('GET', url, gs_manager=self.gs_manager,
+                           headers=self._real_headers("CTPF1002R"),
+                           params=params, timeout=10)
+        try:
+            if res and res.status_code == 200:
+                data = res.json()
+                if data.get("rt_cd") == "0":
+                    name = data.get("output", {}).get("bstp_kor_isnm", "") or ""
+                    return name.strip() or "기타"
+        except Exception as e:
+            write_log(f"[get_sector_for_stock] {code} 조회 오류: {e}")
+        return "기타"
+
+    def analyze_sector_dominance(self, raw_list: list, sector_map: dict) -> dict:
+        """
+        TOP30 내 주도 섹터 분석.
+        동일 업종(bstp_kor_isnm) 3종목 이상 +5% 상승 = 주도 섹터.
+
+        반환: {sector_name: [items sorted by acml_tr_pbmn desc]}
+        주도 섹터가 없으면 {} 반환.
+        """
+        from collections import defaultdict
+        sector_stocks: dict = defaultdict(list)
+        for item in raw_list:
+            code       = item.get("mksc_shrn_iscd", "")
+            price_rate = float(item.get("prdy_ctrt", 0))
+            sector     = sector_map.get(code, "기타")
+            if sector == "기타" or price_rate < 5.0:
+                continue
+            sector_stocks[sector].append(item)
+
+        leading: dict = {}
+        for sector, stocks in sector_stocks.items():
+            if len(stocks) >= 3:
+                stocks.sort(
+                    key=lambda x: float(x.get("acml_tr_pbmn", 0)), reverse=True
+                )
+                leading[sector] = stocks
+        return leading
+
+    def get_index_above_ma5(self, market_code: str) -> bool:
+        """
+        시장 지수가 5일 이동평균선 위에 있는지 여부를 반환.
+
+        market_code:
+            "0001" = 코스피
+            "1001" = 코스닥
+
+        반환:
+            True  — 오늘 종가(또는 현재가) > MA5
+            False — MA5 이하
+            None  — API 실패 (호출부에서 True로 폴백 처리 권장)
+
+        KIS API: /uapi/domestic-stock/v1/quotations/inquire-index-daily-price
+        TR_ID  : FHPUP03500100
+        """
+        if not self._get_real_token():
+            return None
+        url    = (f"{self.REAL_BASE_URL}/uapi/domestic-stock/v1/quotations"
+                  f"/inquire-index-daily-price")
+        params = {
+            "FID_COND_MRKT_DIV_CODE": "U",
+            "FID_INPUT_ISCD":         market_code,
+            "FID_INPUT_DATE_1":       "",
+            "FID_INPUT_DATE_2":       "",
+            "FID_PERIOD_DIV_CODE":    "D",   # 일봉
+        }
+        res = safe_request('GET', url, gs_manager=self.gs_manager,
+                           headers=self._real_headers("FHPUP03500100"),
+                           params=params, timeout=10)
+        try:
+            if res and res.status_code == 200:
+                data = res.json()
+                if data.get("rt_cd") == "0":
+                    output2 = data.get("output2") or []
+                    # output2: 최신순 정렬, [0]=오늘, [1]=어제 ...
+                    closes = []
+                    for row in output2[:10]:
+                        c = float(row.get("bstp_nmix_prpr") or row.get("bstp_nmix_clpr") or 0)
+                        if c > 0:
+                            closes.append(c)
+                        if len(closes) >= 6:
+                            break
+                    if len(closes) >= 6:
+                        today_close = closes[0]
+                        ma5 = sum(closes[1:6]) / 5   # 전 5거래일 평균 (= 어제 기준 MA5)
+                        label = "코스피" if market_code == "0001" else "코스닥"
+                        write_log(f"[시황] {label} 현재가={today_close:.2f} MA5={ma5:.2f} "
+                                  f"({'위' if today_close > ma5 else '아래'})")
+                        return today_close > ma5
+        except Exception as e:
+            write_log(f"[get_index_above_ma5] {market_code} 오류: {e}")
+        return None
 
     def get_inst_net_amount(self, code) -> float:
         """당일 기관 합계 순매수대금(백만원). 실패 시 None 반환."""
@@ -612,6 +740,23 @@ class KISBroker(BaseBroker):
                           f"최근 영업일({market_date}) != 오늘({date_label}).")
                 return []
 
+        # ── 섹터 분석 (NH-Hunter 주도 섹터 판단용) ───────────────────────
+        # TOP30 종목별 업종명을 수집한 뒤 주도 섹터(동일 섹터 3종목 이상 +5%)를 판별.
+        sector_map: dict = {}
+        write_log("[섹터 조회] TOP30 종목 업종명 수집 시작...")
+        for _item in raw_list:
+            _code = _item.get("mksc_shrn_iscd", "")
+            if _code:
+                sector_map[_code] = self.get_sector_for_stock(_code)
+                time.sleep(0.3)
+        leading_sectors: dict = self.analyze_sector_dominance(raw_list, sector_map)
+        if leading_sectors:
+            for _s, _stocks in leading_sectors.items():
+                _leaders = ', '.join(st.get('hts_kor_isnm', '?') for st in _stocks[:3])
+                write_log(f"[주도 섹터] {_s}: {len(_stocks)}종목 ({_leaders})")
+        else:
+            write_log("[주도 섹터] 없음 (동일 섹터 3종목 이상 +5% 미달성)")
+
         # ── 1차 필터: 동전주/거래량/등락률 ── audit 수집 병행 ──────────
         audit_map   = {}  # code -> audit entry
         cnt_10pct   = 0   # 등락 ≥ 10%
@@ -674,6 +819,17 @@ class KISBroker(BaseBroker):
         candidates.sort(key=lambda x: x["amt"], reverse=True)
         write_log(f"[필터 통과] vol>=200%+등락>=10%+1000원: "
                   f"{len(candidates)}종목 -> 52주 신고가 검증 시작")
+
+        # ── 섹터 조회 (V1.1) — 1차 필터 통과 종목 업종명 수집 ──────────────
+        sector_map: dict = {}
+        write_log("[섹터 조회] TOP30 종목 업종명 수집 시작...")
+        for _item in raw_list:
+            _code = _item.get("mksc_shrn_iscd", "")
+            if _code:
+                sector_map[_code] = self.get_sector_for_stock(_code)
+                time.sleep(0.3)
+        leading_sectors: dict = self.analyze_sector_dominance(raw_list, sector_map)
+        write_log(f"[섹터 조회] 완료 — 주도 섹터: {list(leading_sectors.keys())}")
 
         # ── 2차 필터: 52주 신고가 ─────────────────────────────────────────
         # 대시보드 표시용: 등락률 10% 이상 '전체'의 신고가 OX를 검증해 audit에 기록.
@@ -758,7 +914,7 @@ class KISBroker(BaseBroker):
 
             time.sleep(0.2)
 
-        # ── NH-Hunter Audit ────────────────────────────────────────────────
+        # ── NH-Hunter Audit (V1.1 — 섹터 파라미터 포함) ──────────────────
         nh_hunter_entries = []
         for code, entry in audit_map.items():
             if float(entry.get("change_rate", 0)) < 10.0:
@@ -771,12 +927,24 @@ class KISBroker(BaseBroker):
             p_rate   = cand.get("price_rate", 0) if cand else float(entry.get("change_rate", 0))
             mkt_rank = entry.get("mkt_rank", cand.get("mkt_rank", 99) if cand else 99)
 
+            # V1.1 섹터 정보
+            code_sector          = sector_map.get(code, "기타")
+            sector_stocks_sorted = leading_sectors.get(code_sector, [])
+            sector_rank          = next(
+                (i + 1 for i, s in enumerate(sector_stocks_sorted)
+                 if s.get("mksc_shrn_iscd") == code), 0
+            )
+            leading_sector_cnt = len(sector_stocks_sorted)
+
             nh = self.evaluate_nh_hunter(
-                df=df, vol_ratio=vol_rate, price_rate=p_rate, amt_rank=mkt_rank
+                df=df, vol_ratio=vol_rate, price_rate=p_rate, amt_rank=mkt_rank,
+                sector=code_sector, sector_rank=sector_rank,
+                leading_sector_cnt=leading_sector_cnt,
             )
             status = "PASS" if nh["pass_all"] else "FAIL"
             write_log(
                 f"[NH-Hunter] {entry['name']}({code}) {status} "
+                f"섹터:{code_sector}(순위:{sector_rank}/{leading_sector_cnt}) "
                 f"h52:{nh['h52_gap_pct']}% h7d:{nh['h7d_gap_pct']:+.1f}% "
                 f"wick:{nh['wick_pct']:.1f}% vol:{vol_rate:.0f}%"
             )
@@ -784,6 +952,19 @@ class KISBroker(BaseBroker):
             entry_copy["mkt_rank"]  = mkt_rank
             entry_copy["nh_hunter"] = nh
             nh_hunter_entries.append(entry_copy)
+
+        # V1.1 후발주 플래그 — 대장주 상한가 시 섹터 내 2~3위에 is_sector_fallback 설정
+        for entry_copy in nh_hunter_entries:
+            nh          = entry_copy["nh_hunter"]
+            code_sector = nh.get("sector", "기타")
+            if code_sector not in leading_sectors:
+                continue
+            sector_stocks = leading_sectors[code_sector]
+            if not sector_stocks:
+                continue
+            top_rate = float(sector_stocks[0].get("prdy_ctrt", 0))
+            if top_rate >= 29.5 and nh.get("sector_rank", 0) in [2, 3]:
+                nh["is_sector_fallback"] = True
 
         # ── Audit / Summary 기록 ───────────────────────────────────────────
         if self.gs_manager:

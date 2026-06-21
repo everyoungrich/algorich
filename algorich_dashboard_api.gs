@@ -42,6 +42,7 @@ function doGet(e) {
     if (type === 'lead'   || type === 'all') result.leadStocks = getLeadStocks();
     if (type === 'trades' || type === 'all') result.trades     = getTrades();
     if (type === 'scan')                     result.scanTable  = getScanTable();
+    if (type === 'nh_hunter')               result.nhHunter   = getNHHunterAudit();
 
     if (type === 'chart') {
       var code      = (e.parameter.code       || '');
@@ -149,6 +150,55 @@ function getScanTable() {
     }
   }
   return { rows: rows, lastScan: lastScan };
+}
+
+
+// ============================================================
+// NH-Hunter Audit 반환
+//
+// NH_Hunter_Audit 컬럼 (20컬럼):
+//   [0]날짜 [1]종목코드 [2]종목명
+//   [3]거래대금순위 [4]거래대금(억)
+//   [5]상승률(%) [6]거래량비(%)
+//   [7]52주최고가 [8]52주고가이격률(%)
+//   [9]최근7일고가 [10]7일고가이격률(%)
+//   [11]윗꼬리비율(%)
+//   [12]TOP30 [13]상승10% [14]신고가97% [15]7일박스 [16]윗꼬리3% [17]거래량150%
+//   [18]통과여부 [19]탈락사유
+// ============================================================
+function getNHHunterAudit() {
+  var wb    = SpreadsheetApp.openById(LOG_DB_ID);
+  var sheet = wb.getSheetByName('NH_Hunter_Audit');
+  if (!sheet) return { rows: [] };
+
+  var values = sheet.getDataRange().getValues();
+  if (values.length <= 1) return { rows: [] };
+
+  var rows = values.slice(1).slice(-600).map(function(r) {
+    return {
+      date:        formatCell(r[0]),
+      code:        String(r[1] || '').padStart(6, '0'),
+      name:        String(r[2] || ''),
+      mktRank:     toNum(r[3]),
+      amt100m:     toNum(r[4]),
+      changeRate:  toNum(r[5]),
+      volRatio:    toNum(r[6]),
+      h52:         toNum(r[7]),
+      h52GapPct:   toNum(r[8]),
+      h7d:         toNum(r[9]),
+      h7dGapPct:   toNum(r[10]),
+      wickPct:     toNum(r[11]),
+      condTop30:   String(r[12] || ''),
+      condRate10:  String(r[13] || ''),
+      condNh90:    String(r[14] || ''),
+      condBox7:    String(r[15] || ''),
+      condWick3:   String(r[16] || ''),
+      condVol150:  String(r[17] || ''),
+      result:      String(r[18] || ''),
+      failReason:  String(r[19] || '')
+    };
+  });
+  return { rows: rows };
 }
 
 

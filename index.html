@@ -665,8 +665,8 @@
         <span class="cnt">— 관심종목 중 각 전략 조건 해당 종목</span>
     </div>
     <div class="strat-tabs">
-        <button class="strat-tab active" data-st="nh"   onclick="selectStrat('nh')">NH-Sniper <span class="strat-status live">구현 중</span></button>
-        <button class="strat-tab"        data-st="1d"   onclick="selectStrat('1d')">종가베팅 <span class="strat-status wip">예정</span></button>
+        <button class="strat-tab active" data-st="1d"   onclick="selectStrat('1d')">NH-Hunter <span class="strat-status live">구현 중</span></button>
+        <button class="strat-tab"        data-st="nh"   onclick="selectStrat('nh')">NH-Sniper <span class="strat-status live">구현 중</span></button>
         <button class="strat-tab"        data-st="20d"  onclick="selectStrat('20d')">20일눌림 <span class="strat-status wip">예정</span></button>
         <button class="strat-tab"        data-st="env"  onclick="selectStrat('env')">엔벨롭 <span class="strat-status wip">예정</span></button>
         <button class="strat-tab"        data-st="200d" onclick="selectStrat('200d')">장기추세 <span class="strat-status wip">예정</span></button>
@@ -702,8 +702,9 @@
     </div>
     <div class="filter-tabs" id="journal-filter-tabs">
         <button class="filter-tab active" data-jf="all" onclick="filterJournal('all')">전체</button>
+        <button class="filter-tab" data-jf="NH-Hunter"   onclick="filterJournal('NH-Hunter')">NH-Hunter</button>
         <button class="filter-tab" data-jf="NH-Sniper"   onclick="filterJournal('NH-Sniper')">NH-Sniper</button>
-        <button class="filter-tab" data-jf="1D-Rebound"  onclick="filterJournal('1D-Rebound')">1D-Rebound</button>
+        <button class="filter-tab" data-jf="1D-Rebound"  onclick="filterJournal('1D-Rebound')" style="opacity:0.5;font-size:10px">1D-Rebound</button>
         <button class="filter-tab" data-jf="20D-Swing"   onclick="filterJournal('20D-Swing')">20D-Swing</button>
         <button class="filter-tab" data-jf="20D-Envelope" onclick="filterJournal('20D-Envelope')">20D-Envelope</button>
         <button class="filter-tab" data-jf="200D-Trend"  onclick="filterJournal('200D-Trend')">200D-Trend</button>
@@ -810,6 +811,8 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbzgCvzFoam_X7Vhfu0ugdcG
 // 전략 정의
 const STRATEGIES = {
     'NH-Sniper':    { label: 'NH-Sniper',    cls: 'sp-nh',  color: '#00ffa3' },
+    'NH-Hunter':    { label: 'NH-Hunter',    cls: 'sp-1d',  color: '#facc15' },
+    'NH_Hunter':    { label: 'NH-Hunter',    cls: 'sp-1d',  color: '#facc15' },
     '1D-Rebound':   { label: '1D-Rebound',   cls: 'sp-1d',  color: '#a855f7' },
     '20D-Swing':    { label: '20D-Swing',    cls: 'sp-20d', color: '#3b82f6' },
     '20D-Envelope': { label: '20D-Envelope', cls: 'sp-env', color: '#f97316' },
@@ -843,10 +846,11 @@ let _currentCnds = [];
 let _holdingsMap = {};
 let _modalState  = { code:'', name:'', price:0, rate:0, tab:'1Y', buyPrice:0, sellPrice:0, strategy:'' };
 
-let _allLeadRows   = [];
-let _allTradeRows  = [];
+let _allLeadRows    = [];
+let _allTradeRows   = [];
+let _nhHunterRows   = [];  // NH-Hunter Audit 최신 rows
 let _activeMonth   = '';
-let _activeStrat   = 'nh';
+let _activeStrat   = '1d';   // NH-Hunter 탭이 첫 번째
 let _activeJFilter = 'all';
 let _maCache       = {};   // code → { candles, ma5, ma20, ma200 }
 let _maAnalyzing   = false;
@@ -971,6 +975,9 @@ async function updateDashboard() {
     const nhMap = {};
     if (nhData && nhData.rows) {
         nhData.rows.forEach(r => { nhMap[r.date + '_' + r.code] = r; });
+        _nhHunterRows = nhData.rows;
+    } else {
+        _nhHunterRows = [];
     }
 
     _allTradeRows = tradeRows;
@@ -1288,25 +1295,37 @@ const STRAT_INFO = {
         },
     },
     '1d': {
-        name: '1D-Rebound', fullName: '종가베팅 단기 반등 (1D-Rebound)', status: 'wip', color: '#a855f7',
-        sellRule: '익일 장 시작 후 +5% 도달 시 전량 익절 &nbsp;|&nbsp; -2% 손절',
+        name: 'NH-Hunter', fullName: 'NH-Hunter 신고가 사냥꾼 (Audit V1.1)', status: 'live', color: '#facc15',
+        sellRule: '장 중 +15% 전량 익절 &nbsp;|&nbsp; 익일 09:00 갭 +5% 전량 익절 &nbsp;|&nbsp; -5% 손절 &nbsp;|&nbsp; 갭 -3% 손절 &nbsp;|&nbsp; 3일 후 강제 청산',
         conditions: [
-            { id:'c1', label:'S-Class 당일',   desc:'당일 S-Class 4대 조건 충족 종목' },
-            { id:'c2', label:'등락률 5% 이상',  desc:'당일 강한 상승 모멘텀 유지' },
-            { id:'c3', label:'거래대금 상위',   desc:'거래대금 순위 20위 이내' },
-            { id:'c4', label:'15:20 종가 매수', desc:'오후 3시 20분 시장가 종가 진입' },
+            { id:'c1', label:'거래대금 TOP30',    desc:'비ETF 거래대금 상위 30종목 내 포함 (H1)' },
+            { id:'c2', label:'상승률 10%+',       desc:'전일 대비 10% 이상 상승 (H2)' },
+            { id:'c3', label:'52주 신고가 90%',   desc:'현재가 ≥ 52주 최고가의 90% (H3)' },
+            { id:'c4', label:'7일 전고점 돌파',   desc:'7일 전고점 이상 (박스권 상단 돌파, H4)' },
+            { id:'c5', label:'윗꼬리 3% 이하',    desc:'일봉 윗꼬리 3% 이하 — 강한 종가 (H5)' },
+            { id:'c6', label:'거래량 150%+',      desc:'거래량 전일비 150% 이상 — 강한 수요 (H6)' },
+            { id:'c7', label:'주도 섹터',          desc:'TOP30 내 동일 섹터 3종목 이상 +5% (H7·V1.1)' },
         ],
         requiresMA: false,
-        filterWithConds: rows => {
-            const latestDate = rows.map(r => r.date).filter(Boolean).reduce((a,b) => a > b ? a : b, '');
-            return rows.filter(r => r.date === latestDate).map(r => {
-                return { ...r, conds: {
-                    c1: 'ok',
-                    c2: (r.changeRate||0) >= 5.0 ? 'ok' : 'no',
-                    c3: r.isNewHigh === 'Y' ? 'ok' : 'no',
-                    c4: 'na',
-                }};
-            }).filter(r => r.conds.c2 === 'ok' && r.conds.c3 === 'ok');
+        filterWithConds: _rows => {
+            if (!_nhHunterRows.length) return [];
+            const latestDate = _nhHunterRows.map(r => r.date).filter(Boolean).reduce((a,b) => a > b ? a : b, '');
+            return _nhHunterRows
+                .filter(r => r.date === latestDate)
+                .map(r => ({ ...r,
+                    close:         r.changeRate || 0,
+                    scan_amt_100m: r.amt100m    || 0,
+                    conds: {
+                        c1: r.condTop30  === 'Y' ? 'ok' : 'no',
+                        c2: r.condRate10 === 'Y' ? 'ok' : 'no',
+                        c3: r.condNh90   === 'Y' ? 'ok' : 'no',
+                        c4: r.condBox7   === 'Y' ? 'ok' : 'no',
+                        c5: r.condWick3  === 'Y' ? 'ok' : 'no',
+                        c6: r.condVol150 === 'Y' ? 'ok' : 'no',
+                        c7: r.condSector != null ? (r.condSector === 'Y' ? 'ok' : 'no') : 'na',
+                    }
+                }));
+            // 전체 표시 — 조건 배지로 pass/fail 확인 (Audit 목적)
         },
     },
     '20d': {
@@ -1412,7 +1431,7 @@ function _stratDescCard(info) {
         `<div class="strat-cond-item"><span class="sc-num">①②③④`[i*2] + `</span>${esc(c.label)}<div class="sc-desc">${esc(c.desc)}</div></div>`
     ).join('');
     // 실제로는 ① ② ③ ④ 순서
-    const nums = ['①','②','③','④'];
+    const nums = ['①','②','③','④','⑤','⑥','⑦','⑧'];
     const condItems2 = info.conditions.map((c, i) =>
         `<div class="strat-cond-item"><span class="sc-num">${nums[i]}</span>${esc(c.label)}<div class="sc-desc">${esc(c.desc)}</div></div>`
     ).join('');
@@ -1454,7 +1473,7 @@ function _renderStratContent(key, rows) {
         return;
     }
 
-    // ── 데이터 기반 전략 (NH-Sniper, 1D-Rebound) ─────────────
+    // ── 데이터 기반 전략 (NH-Hunter, NH-Sniper) ─────────────
     const cands = info.filterWithConds(rows);
     const latestDate = rows.map(r => r.date).filter(Boolean).reduce((a,b) => a > b ? a : b, '');
     document.getElementById('ma-cand-cnt')?.remove();
@@ -1978,6 +1997,7 @@ function _updateModalHeader(info) {
     // 관리종목·투자경고 배지
     const warnEl = document.getElementById('modal-warn-badge');
     if (warnEl) {
+        let badge = '';
         if (info.isMgmt)          badge += '<span style="background:rgba(255,77,77,.18);color:#ff4d4d;border:1px solid rgba(255,77,77,.4);border-radius:4px;font-size:10px;padding:2px 6px;font-weight:700;margin-right:4px">관리종목</span>';
         if (info.warnLabel)       badge += '<span style="background:rgba(255,140,0,.15);color:#f0a500;border:1px solid rgba(255,140,0,.4);border-radius:4px;font-size:10px;padding:2px 6px;margin-right:4px">⚠ '+info.warnLabel+'</span>';
         warnEl.innerHTML = badge;

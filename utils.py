@@ -94,6 +94,8 @@ class GoogleSheetsManager:
         "최근7일고가", "7일고가이격률(%)",
         "윗꼬리비율(%)",
         "TOP30", "상승10%", "신고가90%", "7일박스", "윗꼬리3%", "거래량150%",
+        # V1.1 추가: 섹터 분석 6컬럼
+        "섹터명", "주도섹터", "섹터내순위", "섹터종목수", "상한가여부", "후발주여부",
         "통과여부", "탈락사유",
     ]
 
@@ -101,7 +103,7 @@ class GoogleSheetsManager:
         try:
             return self.log_wb.worksheet("NH_Hunter_Audit")
         except gspread.exceptions.WorksheetNotFound:
-            ws = self.log_wb.add_worksheet(title="NH_Hunter_Audit", rows=5000, cols=21)
+            ws = self.log_wb.add_worksheet(title="NH_Hunter_Audit", rows=5000, cols=27)
             ws.append_row(self.NH_HUNTER_SHEET_HEADER)
             return ws
 
@@ -127,12 +129,19 @@ class GoogleSheetsManager:
                     nh.get("h7d", ""),
                     nh.get("h7d_gap_pct", ""),
                     nh.get("wick_pct", ""),
-                    "Y" if nh.get("cond_top30")  else "N",
-                    "Y" if nh.get("cond_rate10") else "N",
-                    "Y" if nh.get("cond_nh90")   else "N",
-                    "Y" if nh.get("cond_box7")   else "N",
-                    "Y" if nh.get("cond_wick3")  else "N",
-                    "Y" if nh.get("cond_vol150") else "N",
+                    "Y" if nh.get("cond_top30")   else "N",
+                    "Y" if nh.get("cond_rate10")  else "N",
+                    "Y" if nh.get("cond_nh90")    else "N",
+                    "Y" if nh.get("cond_box7")    else "N",
+                    "Y" if nh.get("cond_wick3")   else "N",
+                    "Y" if nh.get("cond_vol150")  else "N",
+                    # V1.1: 섹터 분석 6컬럼
+                    nh.get("sector", "기타"),
+                    "Y" if nh.get("cond_sector")       else "N",
+                    nh.get("sector_rank", 0),
+                    nh.get("leading_sector_cnt", 0),
+                    "Y" if nh.get("is_upper_limit")    else "N",
+                    "Y" if nh.get("is_sector_fallback") else "N",
                     "PASS" if nh.get("pass_all") else "FAIL",
                     ", ".join(nh.get("fail_reasons", [])),
                 ])

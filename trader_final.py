@@ -11,7 +11,7 @@ socket.setdefaulttimeout(15.0)
 
 from utils import write_log, GoogleSheetsManager
 from brokers import KISBroker
-from strategies import NHSniperStrategy, OneDReboundStrategy
+from strategies import NHSniperStrategy, NHHunterStrategy, OneDReboundStrategy
 
 # =====================================================================
 # [사용자 설정 섹션]
@@ -86,6 +86,10 @@ def run_424_recovery(broker, gs_manager):
 # account_no: 전략별 독립 계좌 (.env에서 로드, 미설정 시 기본 계좌 사용)
 # =====================================================================
 STRATEGY_CONFIG = {
+    "NH-Hunter": {
+        "mode":       os.getenv("NH_HUNTER_MODE", "MOCK"),
+        "account_no": os.getenv("KIS_ACCOUNT_NH_HUNTER", ACCOUNT_NO),
+    },
     "NH-Sniper": {
         "mode":       os.getenv("NH_SNIPER_MODE", "MOCK"),
         "account_no": os.getenv("KIS_ACCOUNT_NH_SNIPER", ACCOUNT_NO),
@@ -130,17 +134,34 @@ if __name__ == "__main__":
         print("[System] AlgoRich 봇이 이미 실행 중입니다. 중복 실행을 종료합니다.")
         sys.exit(0)
 
+    # ── NH-Hunter (종가베팅, 다음날 익절) ──
+    hunter_cfg  = STRATEGY_CONFIG["NH-Hunter"]
+    hunter_mode = "실전" if hunter_cfg["mode"] == "REAL" else "모의"
+
+    # ── NH-Sniper (신고가 상승음봉 5일선 TS) ──
     nh_cfg  = STRATEGY_CONFIG["NH-Sniper"]
     mode_kr = "실전" if nh_cfg["mode"] == "REAL" else "모의"
-    write_log(f"=== [V5.0 NH-Sniper Agent] 신고가 상승음봉 자동매매 개시 ({mode_kr}·계좌:{nh_cfg['account_no']}) ===")
+
+    write_log(
+        f"=== [V5.1 AlgoRich Agent] 개시 "
+        f"NH-Hunter({hunter_mode}) / NH-Sniper({mode_kr}) ==="
+    )
 
     # 1. 초기화 (Utils, Broker, Strategy)
     gs_manager = GoogleSheetsManager()
+
+    # NH-Hunter 브로커·전략 인스턴스
+    hunter_broker   = build_broker(hunter_cfg, gs_manager)
+    hunter_strategy = NHHunterStrategy(
+        broker=hunter_broker, gs_manager=gs_manager, mode=hunter_mode
+    )
+
+    # NH-Sniper 브로커·전략 인스턴스
     kis_broker = build_broker(nh_cfg, gs_manager)
     strategy   = NHSniperStrategy(broker=kis_broker, gs_manager=gs_manager, mode=mode_kr)
 
-    write_log(f"[환경확인] 시세URL={kis_broker.REAL_BASE_URL}")
-    write_log(f"[계좌확인] CANO={kis_broker.cano}, ACNT_PRDT_CD='{kis_broker.acnt_prdt_cd}', 모드={mode_kr}")
+    write_log("[env] BASE_URL=" + kis_broker.REAL_BASE_URL)
+    write_log("[account] NH-Hunter=" + hunter_broker.cano + " / NH-Sniper=" + kis_broker.cano)
 
     # 백필 로직 1회 호출 (주석 처리 - build_watchlist 에러 발생)
     init_token = kis_broker.get_access_token()
@@ -151,14 +172,17 @@ if __name__ == "__main__":
     while True:
         try:
             now = datetime.now()
-            
-            # 전략 틱 실행
+
+            # NH-Hunter 틱 (종가베팅 -- 단기)
+            hunter_strategy.tick(now)
+
+            # NH-Sniper 틱 (신고가 상승음봉 -- 중기)
             strategy.tick(now)
-            
+
             time.sleep(1)
-            
+
         except Exception as e:
-            err_msg = f"[치명적 장애] {type(e).__name__}: {str(e)}"
+            err_msg = "[치명적 장애] " + type(e).__name__ + ": " + str(e)
             write_log(err_msg)
             gs_manager.log_error(err_msg)
             time.sleep(60)
