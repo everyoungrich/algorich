@@ -1313,7 +1313,8 @@ const STRAT_INFO = {
             return _nhHunterRows
                 .filter(r => r.date === latestDate)
                 .map(r => ({ ...r,
-                    close:         r.changeRate || 0,
+                    close:         r.close      || 0,
+                    _mktRank:      r.mktRank    || 0,
                     scan_amt_100m: r.amt100m    || 0,
                     conds: {
                         c1: r.condTop30  === 'Y' ? 'ok' : 'no',
@@ -1486,6 +1487,9 @@ function _renderStratContent(key, rows) {
         const sc    = calcScore(r);
         const cls   = rate >= 0 ? 'up' : 'down';
         const sect  = getSector(r.name||'');
+        const priceDisplay = r._mktRank
+            ? `<div style="font-size:13px;font-weight:700;color:var(--gold)">#${r._mktRank}위</div>`
+            : `<div style="font-size:13px;font-weight:700">${fmtNum(price)}원</div>`;
         return `<div class="cand-row" data-code="${code}" data-name="${name}" data-price="${price}" data-rate="${rate}">
             <div>
                 <div class="cand-name-wrap">
@@ -1495,7 +1499,7 @@ function _renderStratContent(key, rows) {
                 <div class="cond-row">${_condBadge(r.conds, info)}</div>
             </div>
             <div class="cand-rate-col"><span class="${cls}" style="font-size:13px;font-weight:700">${fmtPct(rate)}</span><div style="font-size:10px;color:var(--sub);margin-top:2px">${fmtAmt(r.scan_amt_100m)}</div></div>
-            <div class="cand-price-col"><div style="font-size:13px;font-weight:700">${fmtNum(price)}원</div><div style="font-size:10px;color:var(--sub);margin-top:2px">${latestDate}</div></div>
+            <div class="cand-price-col">${priceDisplay}<div style="font-size:10px;color:var(--sub);margin-top:2px">${latestDate}</div></div>
         </div>`;
     }).join('');
 
