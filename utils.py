@@ -149,6 +149,45 @@ class GoogleSheetsManager:
         except Exception as ex:
             write_log(f"[log_nh_hunter_batch 오류] {repr(ex)}")
 
+    def get_nh_hunter_pass_today(self):
+        """
+        NH_Hunter_Audit 시트에서 오늘 날짜의 PASS 종목 반환.
+        반환 형식: [{"code": ..., "name": ..., "is_upper_limit": bool}, ...]
+        컬럼: [0]=날짜 [1]=종목코드 [2]=종목명 [22]=상한가여부 [24]=통과여부
+        """
+        if not self.initialized:
+            return []
+        try:
+            sheet = self.get_nh_hunter_sheet()
+            all_rows = sheet.get_all_values()
+            if len(all_rows) <= 1:
+                return []
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            result = []
+            seen = set()
+            for row in all_rows[1:]:
+                if len(row) < 25:
+                    continue
+                if row[0] != today_str:
+                    continue
+                if row[24] != "PASS":
+                    continue
+                code = str(row[1]).zfill(6) if row[1] else ""
+                if not code or code in seen:
+                    continue
+                seen.add(code)
+                result.append({
+                    "code":           code,
+                    "name":           row[2],
+                    "is_upper_limit": row[22] == "Y",
+                })
+            write_log(f"[NH-Hunter PASS] 오늘({today_str}) PASS {len(result)}개: "
+                      f"{[r['name'] for r in result]}")
+            return result
+        except Exception as e:
+            write_log(f"[get_nh_hunter_pass_today 오류] {e}")
+            return []
+
     def get_log_sheet(self, tab_name="0_주도주_Log"):
         try:
             return self.log_wb.worksheet(tab_name)
