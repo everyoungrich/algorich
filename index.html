@@ -666,7 +666,7 @@
         <button class="strat-tab"        data-st="nh"   onclick="selectStrat('nh')">NH-Sniper <span class="strat-status live">구현 중</span></button>
         <button class="strat-tab"        data-st="20d"  onclick="selectStrat('20d')">20일눌림 <span class="strat-status wip">예정</span></button>
         <button class="strat-tab"        data-st="env"  onclick="selectStrat('env')">엔벨롭 <span class="strat-status wip">예정</span></button>
-        <button class="strat-tab"        data-st="200d" onclick="selectStrat('200d')">장기추세 <span class="strat-status wip">예정</span></button>
+        <button class="strat-tab"        data-st="200d" onclick="selectStrat('200d')">장기추세 <span class="strat-status live">구현 중</span></button>
     </div>
     <div id="strat-content">
         <div class="loading-state">데이터 로딩 중...</div>
@@ -912,6 +912,72 @@ async function loadHistory() {
         document.getElementById('hist-table').innerHTML =
             '<div class="empty-state">히스토리를 불러오지 못했습니다. 탭을 다시 눌러보세요.</div>';
     }
+}
+
+// ── 장기추세(200D-Trend) 매수신호 관측 탭 ──────────────────────────
+// 20d/env가 쓰는 공통 MA분석엔진(analyzeMAForStrat/_getRecentLeadCodes/_maCache)과는
+// 완전히 별개 — 유니버스(1_Scan_Audit_Log 6개월)도, 판정 로직(BREAKOUT/SUPPORT/추세필터,
+// 여러 날짜 비교 필요)도 다르기 때문에 파이썬 전략이 이미 계산해 남긴 결과를 그대로 표시한다.
+let _ma200TrendState = 'idle';   // idle | loading | loaded
+let _ma200TrendRows  = [];
+
+async function loadMA200TrendSignals() {
+    if (_ma200TrendState !== 'idle') return;
+    _ma200TrendState = 'loading';
+    _renderMA200TrendTab(STRAT_INFO['200d'], document.getElementById('strat-content'));
+    try {
+        const res = await fetch(API_URL + '?type=ma200_trend')
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+        if (res.status !== 'ok' || !res.ma200Trend) throw new Error(res.error || '응답 오류');
+        _ma200TrendRows  = res.ma200Trend.rows || [];
+        _ma200TrendState = 'loaded';
+        if (_activeStrat === '200d') _renderMA200TrendTab(STRAT_INFO['200d'], document.getElementById('strat-content'));
+    } catch (err) {
+        _ma200TrendState = 'idle';
+        console.warn('[AR] ma200_trend API 실패:', err.message);
+        if (_activeStrat === '200d') {
+            document.getElementById('strat-content').innerHTML =
+                _stratDescCard(STRAT_INFO['200d']) +
+                '<div class="card"><div class="strat-empty">신호 데이터를 불러오지 못했습니다. 탭을 다시 눌러보세요.</div></div>';
+        }
+    }
+}
+
+function _renderMA200TrendTab(info, el) {
+    if (_ma200TrendState === 'idle') { loadMA200TrendSignals(); }
+    if (_ma200TrendState !== 'loaded') {
+        el.innerHTML = _stratDescCard(info) + '<div class="card"><div class="loading-state">신호 로딩 중...</div></div>';
+        return;
+    }
+    const rows = _ma200TrendRows.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 100);
+    const rowsHtml = rows.map(r => {
+        return `<div class="cand-row">
+            <div>
+                <div class="cand-name-wrap">
+                    <span class="cand-name">${esc(r.name)}</span>
+                    <span class="sec-tag">${esc(r.signalType)}</span>
+                    ${r.executed ? '<span class="sc-badge sc-s">매수실행</span>' : ''}
+                </div>
+                <div class="cand-sub">${esc(r.code)} · ${esc(r.date)}${r.remark ? ' · ' + esc(r.remark) : ''}</div>
+            </div>
+            <div class="cand-rate-col">
+                <span style="font-size:13px;font-weight:700">${fmtNum(r.price)}원</span>
+                <div style="font-size:10px;color:var(--sub);margin-top:2px">MA20 ${fmtNum(r.ma20)} / MA200 ${fmtNum(r.ma200)}</div>
+            </div>
+        </div>`;
+    }).join('');
+
+    el.innerHTML = _stratDescCard(info) +
+        `<div class="card">
+            <div class="card-hdr">
+                <span class="card-hdr-title">장기추세 매수신호 관측 <span class="cnt">${_ma200TrendRows.length}건</span></span>
+                <span class="badge" style="color:var(--sub);font-size:10px">최근 100건 표시</span>
+            </div>
+            ${rows.length
+                ? `<div class="cand-list-wrap">${rowsHtml}</div>`
+                : `<div class="strat-empty">아직 관측된 매수신호가 없습니다<br><span style="color:var(--sub);font-size:11px">봇이 매일 09:05 유니버스 스캔, 15:15 신호 체크를 수행합니다</span></div>`
+            }
+        </div>`;
 }
 
 function renderHistoryMonthTabs() {
@@ -1467,29 +1533,15 @@ const STRAT_INFO = {
         maFilterFn: (result) => result && result.conds.c2 === 'ok',
     },
     '200d': {
-        name: '200D-Trend', fullName: '장기 추세추종 (200D-Trend)', status: 'wip', color: '#f0a500',
-        sellRule: '+30% 익절 &nbsp;|&nbsp; 200일선 하향 이탈 시 전량 청산',
+        name: 'MA200_TREND', fullName: '장기 추세추종 (MA200_TREND)', status: 'live', color: '#f0a500',
+        sellRule: '실시간 +10% → 원수량 35% 익절 &nbsp;|&nbsp; 종가 MA20 이탈 → 원수량 35% 매도 '
+                + '&nbsp;|&nbsp; 종가 MA200 이탈 → 잔량 전량 청산',
         conditions: [
-            { id:'c1', label:'MA200 위',        desc:'현재가가 200일 이동평균선 위' },
-            { id:'c2', label:'MA200 ±5% 근접',  desc:'200일선 지지 터치 (5% 이내)' },
-            { id:'c3', label:'추세 우상향',      desc:'MA200 기울기 우상향' },
-            { id:'c4', label:'S-Class 이력',    desc:'과거 S-Class 포착으로 모멘텀 확인' },
+            { id:'c1', label:'MA200_BREAKOUT', desc:'전일종가≤전일MA200, 금일종가>금일MA200 (돌파)' },
+            { id:'c2', label:'MA200_SUPPORT',  desc:'최근 5일 내 MA200±3% 근접 후 금일 MA200 위 마감 (지지)' },
+            { id:'c3', label:'추세 필터',       desc:'금일 MA200 ≥ 20거래일 전 MA200 (하락추세 시 보류)' },
+            { id:'c4', label:'6개월 주도주 이력', desc:'최근 6개월 주도주(거래대금30위·10%+) 이력 + 고점대비 낙폭 50% 이내' },
         ],
-        requiresMA: true, maPeriod: 200, maCondLabel: 'MA200',
-        maFilter: (stock, ma200Last, ma5Last) => {
-            const price = stock.close || 0;
-            if (!price || !ma200Last) return null;
-            const distPct = ((price - ma200Last) / ma200Last) * 100;
-            return { ...stock, maValue: ma200Last, maDist: distPct,
-                conds: {
-                    c1: price > ma200Last ? 'ok' : 'no',
-                    c2: distPct >= 0 && distPct <= 5.0 ? 'ok' : 'no',
-                    c3: 'na',
-                    c4: 'ok',
-                }
-            };
-        },
-        maFilterFn: (result) => result && result.conds.c1 === 'ok' && result.conds.c2 === 'ok',
     },
 };
 
@@ -1536,6 +1588,13 @@ function _renderStratContent(key, rows) {
     rows = rows || _allLeadRows;
     const info = STRAT_INFO[key]; if (!info) return;
     const el = document.getElementById('strat-content');
+
+    // ── 200d(장기추세): 20d/env가 쓰는 공통 MA분석엔진을 타지 않고
+    //    서버(파이썬 전략)가 계산해 남긴 실제 신호를 그대로 표시 (완전히 별도 경로) ──
+    if (key === '200d') {
+        _renderMA200TrendTab(info, el);
+        return;
+    }
 
     // ── MA 필요 전략 ─────────────────────────────────────────
     if (info.requiresMA) {

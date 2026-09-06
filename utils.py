@@ -2,7 +2,7 @@ import os
 import time
 import requests
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -19,11 +19,21 @@ LOG_DB_ID = "1rf4ppPSqYlM9-dr1WcFpHl3g-mCeWzl4xlibZ1OnBbY"
 _LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trade_log.txt")
 
 def write_log(message):
+    import sys
     now_str = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
     log_msg = f"{now_str} {message}"
-    print(log_msg)
-    with open(_LOG_PATH, "a", encoding="utf-8") as f:
-        f.write(log_msg + "\n")
+    # stdout 인코딩(Windows cp949/Task Scheduler 환경)에 안전하게 출력
+    try:
+        enc = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+        safe = log_msg.encode(enc, errors='replace').decode(enc)
+        print(safe)
+    except Exception:
+        pass  # 콘솔 출력 실패해도 파일 기록은 계속
+    try:
+        with open(_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(log_msg + "\n")
+    except Exception:
+        pass
 
 class GoogleSheetsManager:
     def __init__(self, credentials_path="google_credentials.json"):
@@ -58,6 +68,7 @@ class GoogleSheetsManager:
             "1D_RB":     "1D-Rebound",
             "20D_SW":    "20D-Swing",
             "ENV_RB":    "Env-Rebound",
+            "MA200_TREND": "200D-Trend",
         }
         target_tab = sheet_name_map.get(strategy_type, "1D-Rebound")
         try:
@@ -309,11 +320,138 @@ class GoogleSheetsManager:
         except Exception as e:
             write_log(f"과거 주도주 조회 실패: {e}")
             return []
-    def log_buy(self, trade_id, code, name, price, qty, strategy_type="1D_RB", mode="모의"):
+    MA200_TREND_SIGNAL_HEADER = [
+        "날짜", "종목코드", "종목명", "신호유형", "현재가", "MA20", "MA200", "실행여부", "비고",
+    ]
+
+    def get_ma200_trend_signal_sheet(self):
+        try:
+            return self.log_wb.worksheet("MA200_Trend_Signal_Log")
+        except gspread.exceptions.WorksheetNotFound:
+            ws = self.log_wb.add_worksheet(title="MA200_Trend_Signal_Log", rows=3000, cols=9)
+            ws.append_row(self.MA200_TREND_SIGNAL_HEADER)
+            return ws
+
+    def log_ma200_trend_signal(self, code, name, signal_type, price, ma20, ma200,
+                                executed=False, remark=""):
+        """MA200_TREND 매수신호 관측 로그 (실행 여부 무관, 대시보드 '장기 추세 전략' 탭 노출용).
+        기존 NH_Hunter_Audit / 1_Scan_Audit_Log와 동일한 감사로그 컨벤션을 따르는 신규 탭 1개."""
+        if not self.initialized:
+            return
+        try:
+            sheet = self.get_ma200_trend_signal_sheet()
+            now_str = datetime.now().strftime("%Y-%m-%d")
+            sheet.append_row([
+                now_str, code, name, signal_type,
+                int(price), int(ma20), int(ma200),
+                "Y" if executed else "N", remark,
+            ], value_input_option='USER_ENTERED')
+        except Exception as e:
+            write_log(f"[log_ma200_trend_signal 실패] {code}: {repr(e)}")
+
+    def get_ma200_trend_universe(self, months=6):
+        """MA200_TREND 매수 유니버스: 최근 N개월 1_Scan_Audit_Log 중 등락률10%통과==Y 종목을 코드 기준 중복 제거해 반환.
+        새 시트/구조 없이 기존 1_Scan_Audit_Log(오늘의 주도주/히스토리 탭과 동일 소스)만 재사용."""
+        if not self.initialized:
+            return []
+        try:
+            sheet = self.get_audit_sheet()
+            all_values = sheet.get_all_values()
+            if len(all_values) <= 1:
+                return []
+            header = all_values[0]
+            try:
+                idx_date = header.index("날짜")
+                idx_code = header.index("종목코드")
+                idx_name = header.index("종목명")
+                idx_pass10 = header.index("등락률10%통과")
+            except ValueError:
+                write_log("[get_ma200_trend_universe] 헤더 형식 불일치")
+                return []
+
+            cutoff = (datetime.now() - timedelta(days=months * 30)).strftime("%Y-%m-%d")
+            seen = {}
+            for row in all_values[1:]:
+                if len(row) <= max(idx_date, idx_code, idx_name, idx_pass10):
+                    continue
+                date_val = row[idx_date]
+                if not date_val or date_val < cutoff:
+                    continue
+                if row[idx_pass10] != "Y":
+                    continue
+                code_val = str(row[idx_code]).zfill(6) if row[idx_code] else ""
+                if not code_val or code_val == "000000":
+                    continue
+                # 동일 종목 중복 시 가장 최근 이름으로 갱신
+                seen[code_val] = row[idx_name]
+            return [{"code": c, "name": n} for c, n in seen.items()]
+        except Exception as e:
+            write_log(f"[get_ma200_trend_universe 실패] {repr(e)}")
+            return []
+
+    def get_ma200_trend_position_state(self, code):
+        """MA200_TREND 재시작 복구용: 200D-Trend 시트에서 현재 '보유' 행을 찾고,
+        동일 종목코드+매수일자+매수단가 계보(원 매수 시점 분할매도로 파생된 행 포함) 전체를
+        조회해 원 매수수량과 이미 실행된 매도 단계(비고란에 남긴 사유)를 복원한다.
+        새 컬럼/시트 없이 기존 매매일지 행만 재사용."""
+        if not self.initialized:
+            return None
+        try:
+            sheet = self.get_main_sheet("MA200_TREND")
+            records = sheet.get_all_records()
+
+            held = None
+            for row in records:
+                if str(row.get("종목코드", "")).zfill(6) == code and row.get("상태", "") == "보유":
+                    held = row
+                    break
+            if held is None:
+                return None
+
+            buy_date = held.get("매수일자", "")
+            try:
+                buy_price = float(held.get("매수단가", 0))
+            except (TypeError, ValueError):
+                buy_price = 0
+
+            original_qty = 0
+            done_reasons = set()
+            for row in records:
+                if str(row.get("종목코드", "")).zfill(6) != code:
+                    continue
+                if row.get("매수일자", "") != buy_date:
+                    continue
+                try:
+                    row_buy_price = float(row.get("매수단가", 0))
+                except (TypeError, ValueError):
+                    row_buy_price = 0
+                if int(row_buy_price) != int(buy_price):
+                    continue
+                try:
+                    original_qty += int(row.get("매수수량", 0))
+                except (TypeError, ValueError):
+                    pass
+                if row.get("상태", "") == "완료":
+                    remark = str(row.get("비고(로그)", ""))
+                    if remark:
+                        done_reasons.add(remark)
+
+            return {
+                "original_qty": original_qty,
+                "buy_date": buy_date,
+                "buy_price": buy_price,
+                "current_qty": int(held.get("매수수량", 0) or 0),
+                "done_reasons": done_reasons,
+            }
+        except Exception as e:
+            write_log(f"[get_ma200_trend_position_state 실패] {code}: {repr(e)}")
+            return None
+
+    def log_buy(self, trade_id, code, name, price, qty, strategy_type="1D_RB", mode="모의", remark="매수완료"):
         if not self.initialized: return
         now_str = datetime.now().strftime("%Y-%m-%d")
         invest_amt = price * qty
-        row = [trade_id, "보유", code, name, now_str, int(price), int(qty), int(invest_amt), "", "", "", "", "매수완료", mode]
+        row = [trade_id, "보유", code, name, now_str, int(price), int(qty), int(invest_amt), "", "", "", "", remark, mode]
         try:
             target_sheet = self.get_main_sheet(strategy_type)
             target_sheet.append_row(row, value_input_option='USER_ENTERED')
@@ -331,7 +469,7 @@ class GoogleSheetsManager:
         except Exception as e:
             write_log(f"[log_error 시트기록 실패] {repr(e)}")
 
-    def log_sell(self, code, sell_price, sell_qty, is_partial=False, strategy_type="1D_RB"):
+    def log_sell(self, code, sell_price, sell_qty, is_partial=False, strategy_type="1D_RB", sell_reason=None):
         if not self.initialized: return
         try:
             target_sheet = self.get_main_sheet(strategy_type)
@@ -363,6 +501,8 @@ class GoogleSheetsManager:
                             [int(sell_qty), int(invest_amt), now_str, int(sell_price), float(profit_rt), int(profit)]
                         ], value_input_option='USER_ENTERED')
                         target_sheet.update(f"B{row_index}", [["완료"]], value_input_option='USER_ENTERED')
+                        if sell_reason:
+                            target_sheet.update(f"M{row_index}", [[sell_reason]], value_input_option='USER_ENTERED')
                         
                         rem_qty = buy_qty - sell_qty
                         rem_invest = buy_price * rem_qty
@@ -374,6 +514,8 @@ class GoogleSheetsManager:
                             [now_str, int(sell_price), float(profit_rt), int(profit)]
                         ], value_input_option='USER_ENTERED')
                         target_sheet.update(f"B{row_index}", [["완료"]], value_input_option='USER_ENTERED')
+                        if sell_reason:
+                            target_sheet.update(f"M{row_index}", [[sell_reason]], value_input_option='USER_ENTERED')
                     break
         except Exception as e:
             write_log(f"[log_sell 실패] {code} {strategy_type}: {repr(e)}")

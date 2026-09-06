@@ -29,6 +29,8 @@ var MAIN_SHEET_NAME = '1D-Rebound';
 // ?type=lead                              → 주도주 로그
 // ?type=trades                            → 매매일지
 // ?type=scan                              → 스캔 audit (오늘의 주도주 표)
+// ?type=history                           → 히스토리 탭 (스캔 audit 전체 이력, 10%↑만)
+// ?type=ma200_trend                        → 장기 추세(200D-Trend) 매수신호 관측 로그
 // ?type=chart&code=XXXXXX
 //          [&period=250][&period_div=D|W|M] → 봉 차트 데이터
 // ?type=stockinfo&code=XXXXXX            → 현재가 + 기본정보 + 수급
@@ -41,8 +43,10 @@ function doGet(e) {
   try {
     if (type === 'lead'   || type === 'all') result.leadStocks = getLeadStocks();
     if (type === 'trades' || type === 'all') result.trades     = getTrades();
-    if (type === 'scan')                     result.scanTable  = getScanTable();
-    if (type === 'nh_hunter')               result.nhHunter   = getNHHunterAudit();
+    if (type === 'scan')                     result.scanTable   = getScanTable();
+    if (type === 'history')                 result.scanHistory = getScanHistory();
+    if (type === 'nh_hunter')               result.nhHunter    = getNHHunterAudit();
+    if (type === 'ma200_trend')             result.ma200Trend  = getMA200TrendSignals();
 
     if (type === 'chart') {
       var code      = (e.parameter.code       || '');
@@ -150,6 +154,73 @@ function getScanTable() {
     }
   }
   return { rows: rows, lastScan: lastScan };
+}
+
+
+// ============================================================
+// 히스토리 탭 — 거래대금 Top30 · 등락률 10%↑ 종목의 전체 이력 반환
+//
+// getScanTable()과 같은 시트(1_Scan_Audit_Log)를 쓰지만:
+//  - 최근 600행 캡을 두지 않고 시트 전체를 반환 (빠짐없이 보기 위함)
+//  - PASS/FAIL 구분 없이 등락률 10% 이상인 행만 필터링해서 반환
+//  - "히스토리" 탭을 처음 열 때 1회만 호출되는 지연 로딩용 — 초기 대시보드
+//    로딩(type=all 등)에는 포함시키지 않는다.
+// ============================================================
+function getScanHistory() {
+  var wb    = SpreadsheetApp.openById(LOG_DB_ID);
+  var sheet = wb.getSheetByName('1_Scan_Audit_Log');
+  var rows  = [];
+  if (sheet) {
+    var values = sheet.getDataRange().getValues();
+    if (values.length > 1) {
+      rows = values.slice(1)
+        .map(function(r) {
+          return {
+            date:       formatCell(r[0]),
+            code:       String(r[1] || '').padStart(6, '0'),
+            name:       String(r[2] || ''),
+            amt100m:    toNum(r[3]),
+            changeRate: toNum(r[5]),
+            volRatio:   toNum(r[7]),
+          };
+        })
+        .filter(function(r) { return r.changeRate >= 10.0; });
+    }
+  }
+  return { rows: rows };
+}
+
+
+// ============================================================
+// MA200_TREND(장기추세) 매수신호 관측 로그 반환
+//
+// MA200_Trend_Signal_Log 컬럼(9컬럼):
+//   [0]날짜 [1]종목코드 [2]종목명 [3]신호유형(MA200_BREAKOUT/MA200_SUPPORT)
+//   [4]현재가 [5]MA20 [6]MA200 [7]실행여부(Y/N) [8]비고
+// ============================================================
+function getMA200TrendSignals() {
+  var wb    = SpreadsheetApp.openById(LOG_DB_ID);
+  var sheet = wb.getSheetByName('MA200_Trend_Signal_Log');
+  var rows  = [];
+  if (sheet) {
+    var values = sheet.getDataRange().getValues();
+    if (values.length > 1) {
+      rows = values.slice(1).map(function(r) {
+        return {
+          date:       formatCell(r[0]),
+          code:       String(r[1] || '').padStart(6, '0'),
+          name:       String(r[2] || ''),
+          signalType: String(r[3] || ''),
+          price:      toNum(r[4]),
+          ma20:       toNum(r[5]),
+          ma200:      toNum(r[6]),
+          executed:   String(r[7] || '') === 'Y',
+          remark:     String(r[8] || ''),
+        };
+      });
+    }
+  }
+  return { rows: rows };
 }
 
 

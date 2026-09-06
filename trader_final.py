@@ -11,7 +11,7 @@ socket.setdefaulttimeout(15.0)
 
 from utils import write_log, GoogleSheetsManager
 from brokers import KISBroker
-from strategies import NHSniperStrategy, NHHunterStrategy, OneDReboundStrategy
+from strategies import NHSniperStrategy, NHHunterStrategy, OneDReboundStrategy, MA200TrendStrategy
 
 # =====================================================================
 # [사용자 설정 섹션]
@@ -160,8 +160,19 @@ if __name__ == "__main__":
     kis_broker = build_broker(nh_cfg, gs_manager)
     strategy   = NHSniperStrategy(broker=kis_broker, gs_manager=gs_manager, mode=mode_kr)
 
+    # MA200_TREND 브로커·전략 인스턴스 (전용 계좌: KIS_ACCOUNT_TREND / TREND_MODE 로 분리 가능)
+    trend_cfg      = STRATEGY_CONFIG["200D-Trend"]
+    trend_mode_kr  = "실전" if trend_cfg["mode"] == "REAL" else "모의"
+    # 1단계 검증 기간(관측 전용, 실주문 없음): TREND_DRY_RUN=false 로 바뀌기 전까지 기본 true
+    trend_dry_run  = os.getenv("TREND_DRY_RUN", "true").lower() == "true"
+    trend_broker   = build_broker(trend_cfg, gs_manager)
+    trend_strategy = MA200TrendStrategy(broker=trend_broker, gs_manager=gs_manager,
+                                         mode=trend_mode_kr, dry_run=trend_dry_run)
+
     write_log("[env] BASE_URL=" + kis_broker.REAL_BASE_URL)
-    write_log("[account] NH-Hunter=" + hunter_broker.cano + " / NH-Sniper=" + kis_broker.cano)
+    write_log("[account] NH-Hunter=" + hunter_broker.cano + " / NH-Sniper=" + kis_broker.cano
+              + " / MA200_TREND=" + trend_broker.cano
+              + (" (DRY_RUN)" if trend_dry_run else ""))
 
     # 백필 로직 1회 호출 (주석 처리 - build_watchlist 에러 발생)
     init_token = kis_broker.get_access_token()
@@ -178,6 +189,9 @@ if __name__ == "__main__":
 
             # NH-Sniper 틱 (신고가 상승음봉 -- 중기)
             strategy.tick(now)
+
+            # MA200_TREND 틱 (200일선 장기 추세추종)
+            trend_strategy.tick(now)
 
             time.sleep(1)
 
