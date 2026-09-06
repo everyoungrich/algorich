@@ -645,11 +645,12 @@
 <div class="section" id="sec-history">
     <div class="section-title">
         📅 히스토리
-        <span class="cnt">— 날짜별 스캔 결과 및 신호 이력</span>
+        <span class="cnt">— 날짜별 거래대금 Top30 · 등락률 10%↑ 종목 전체 이력</span>
     </div>
     <div class="card">
-        <div style="color:var(--sub);font-size:13px;text-align:center;padding:24px 0;">
-            히스토리 뷰 준비 중입니다.
+        <div class="month-tabs" id="hist-month-tabs"></div>
+        <div id="hist-table">
+            <div class="loading-state">히스토리 탭을 열면 데이터를 불러옵니다...</div>
         </div>
     </div>
 </div>
@@ -882,6 +883,95 @@ function showSection(sec) {
     document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
     document.getElementById('sec-' + sec)?.classList.add('active');
     document.querySelector(`.nav-tab[data-sec="${sec}"]`)?.classList.add('active');
+    if (sec === 'history') loadHistory();
+}
+
+// ── 히스토리 탭 (거래대금 Top30 · 등락률 10%↑ 전체 이력) ──────────
+// "오늘의 주도주"(renderScanTable)와 같은 1_Scan_Audit_Log를 쓰지만
+// 별도 상태(_histRows 등)·별도 DOM(#hist-month-tabs, #hist-table)을 써서
+// 기존 _allLeadRows/#lead-stock-table(전략 후보 탭이 쓰는 상태)과는 완전히 분리한다.
+let _histState      = 'idle';   // idle | loading | loaded
+let _histRows       = [];
+let _histActiveMonth = '';
+
+async function loadHistory() {
+    if (_histState !== 'idle') return;   // 이미 로딩했거나 로딩 중이면 재요청 안 함
+    _histState = 'loading';
+    document.getElementById('hist-table').innerHTML =
+        '<div class="loading-state">지난 데이터 불러오는 중...</div>';
+    try {
+        const res = await fetch(API_URL + '?type=history')
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+        if (res.status !== 'ok' || !res.scanHistory) throw new Error(res.error || '응답 오류');
+        _histRows  = res.scanHistory.rows || [];
+        _histState = 'loaded';
+        renderHistoryMonthTabs();
+    } catch (err) {
+        _histState = 'idle';   // 재시도할 수 있게 되돌림
+        console.warn('[AR] history API 실패:', err.message);
+        document.getElementById('hist-table').innerHTML =
+            '<div class="empty-state">히스토리를 불러오지 못했습니다. 탭을 다시 눌러보세요.</div>';
+    }
+}
+
+function renderHistoryMonthTabs() {
+    const tabsEl  = document.getElementById('hist-month-tabs');
+    const tableEl = document.getElementById('hist-table');
+    if (!_histRows.length) {
+        tabsEl.innerHTML = '';
+        tableEl.innerHTML = '<div class="empty-state"><div class="em-icon">📭</div>기록된 데이터가 없습니다.</div>';
+        return;
+    }
+    const months = [...new Set(_histRows.map(r => r.date?.slice(0,7)).filter(Boolean))].sort().reverse();
+    if (!_histActiveMonth || !months.includes(_histActiveMonth)) _histActiveMonth = months[0];
+
+    const totalByMonth = {};
+    months.forEach(m => { totalByMonth[m] = _histRows.filter(r => r.date?.startsWith(m)).length; });
+    tabsEl.innerHTML = months.map(m => {
+        const mo = m.split('-')[1];
+        const active = m === _histActiveMonth ? ' active' : '';
+        return `<button class="month-tab${active}" onclick="selectHistoryMonth('${m}')">${parseInt(mo,10)}월 <span style="opacity:.6;font-weight:400">${totalByMonth[m]}</span></button>`;
+    }).join('');
+
+    renderHistoryMonth(_histActiveMonth);
+}
+
+function selectHistoryMonth(month) {
+    _histActiveMonth = month;
+    renderHistoryMonthTabs();
+}
+
+function renderHistoryMonth(month) {
+    const tableEl = document.getElementById('hist-table');
+    const rows = _histRows.filter(r => r.date?.startsWith(month));
+    if (!rows.length) {
+        tableEl.innerHTML = '<div class="empty-state">해당 월 데이터 없음</div>';
+        return;
+    }
+    const grouped = new Map();
+    rows.forEach(r => { if (!grouped.has(r.date)) grouped.set(r.date, []); grouped.get(r.date).push(r); });
+    const sortedDates = [...grouped.keys()].sort((a,b) => b.localeCompare(a));
+
+    tableEl.innerHTML = sortedDates.map(date => {
+        const group = [...grouped.get(date)].sort((a,b) => (b.amt100m||0) - (a.amt100m||0));
+        const rowsHtml = group.map(r => {
+            const rate   = r.changeRate || 0;
+            const code   = esc(String(r.code||'').replace(/[^0-9A-Za-z]/g,''));
+            const name   = esc(r.name||'');
+            const sector = getSector(r.name||'');
+            const secTag = sector ? '<span class="sec-tag">' + sector + '</span>' : '';
+            return '<tr>' +
+                '<td><div>' + name + '</div><div class="sub-text">' + code + secTag + '</div></td>' +
+                '<td><span class="up">' + fmtPct(rate) + '</span></td>' +
+                '<td style="color:var(--sub);font-size:11px">' + fmtAmt(r.amt100m) + '</td>' +
+                '<td style="color:var(--sub);font-size:11px">' + (r.volRatio||0).toFixed(0) + '%</td></tr>';
+        }).join('');
+        return '<div class="date-group">' +
+            '<div class="dg-hdr">📅 ' + esc(date) + ' · ' + group.length + '종목<span class="dg-line"></span></div>' +
+            '<table class="tbl"><colgroup><col style="width:46%"><col style="width:18%"><col style="width:18%"><col style="width:18%"></colgroup>' +
+            '<thead><tr><th style="text-align:left">종목</th><th>등락률</th><th>거래대금</th><th>거래량비</th></tr></thead>' +
+            '<tbody>' + rowsHtml + '</tbody></table></div>';
+    }).join('');
 }
 
 // ── 신호 점수 ─────────────────────────────────────────────────
@@ -2160,4 +2250,3 @@ setInterval(updateDashboard, 60000);
 </body>
 </html>
 <!-- test_sync -->
-                                                                                                                      
