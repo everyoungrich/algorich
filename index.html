@@ -962,7 +962,10 @@ function _renderMA200TrendTab(info, el) {
             </div>
             <div class="cand-rate-col">
                 <span style="font-size:13px;font-weight:700">${fmtNum(r.price)}원</span>
-                <div style="font-size:10px;color:var(--sub);margin-top:2px">MA20 ${fmtNum(r.ma20)} / MA200 ${fmtNum(r.ma200)}</div>
+            </div>
+            <div class="cand-price-col">
+                <div style="font-size:10px;color:var(--sub)">MA20 ${fmtNum(r.ma20)}</div>
+                <div style="font-size:10px;color:var(--sub);margin-top:2px">MA200 ${fmtNum(r.ma200)}</div>
             </div>
         </div>`;
     }).join('');
