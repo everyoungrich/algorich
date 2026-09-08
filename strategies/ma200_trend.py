@@ -1,7 +1,7 @@
 import math
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from utils import write_log
 from .base import BaseStrategy
@@ -55,6 +55,11 @@ class MA200TrendStrategy(BaseStrategy):
         self.has_executed_universe_scan = False
         self.has_executed_entry_check = False
         self.has_executed_entry_buy = False
+
+        # 잔고 조회 연속 실패 백오프 (NH-Sniper와 동일 패턴) — 잘못된/무효 계좌번호 등으로
+        # 매 30초 조회가 계속 실패할 때 API 호출·로그가 무한히 쌓이는 것을 방지
+        self._balance_fail_count = 0
+        self._balance_pause_until = None
 
     # ── 일일 초기화 ─────────────────────────────────────────────
     def reset_daily_state(self):
@@ -166,9 +171,24 @@ class MA200TrendStrategy(BaseStrategy):
 
     # ── 실시간 +10% 익절 모니터링 (30초 주기) ───────────────────
     def monitor_take_profit(self):
+        # 연속 실패 백오프: 3회 연속 실패 시 5분간 호출 중단 (무효 계좌번호 등으로
+        # 계속 실패하는 상황에서 API 호출·로그 폭주 방지 — NH-Sniper와 동일 패턴)
+        if self._balance_pause_until and datetime.now() < self._balance_pause_until:
+            return
+
         _, tot_eval, holdings = self.broker.get_balance()
         if tot_eval is None:
+            self._balance_fail_count += 1
+            if self._balance_fail_count >= 3:
+                self._balance_pause_until = datetime.now() + timedelta(minutes=5)
+                write_log(f"[MA200_TREND] 잔고 조회 {self._balance_fail_count}회 연속 실패 "
+                          f"→ 5분간 실시간 익절 모니터링 유예 (계좌번호/모의계좌 설정 확인 필요)")
+            else:
+                write_log("[MA200_TREND] 잔고 조회 불가, 실시간 익절 모니터링 유예")
             return
+
+        self._balance_fail_count = 0
+        self._balance_pause_until = None
 
         for h in holdings:
             code, name = h["code"], h["name"]
