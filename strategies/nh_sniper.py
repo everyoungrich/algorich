@@ -354,7 +354,7 @@ class NHSniperStrategy(BaseStrategy):
             if not self.broker.check_market_crash():
                 self.run_entry_check()
             else:
-                write_log("[NH-Sniper] 코스피 급락 감지 — 당일 매수 중단")
+                write_log("[NH-Sniper] 코스피 급락 감지 - 당일 매수 중단")
             self.has_executed_entry_check = True
 
         # 15:20~15:24 (1회) — 시장가 매수 실행
@@ -368,7 +368,7 @@ class NHSniperStrategy(BaseStrategy):
         # 2차 방어: brokers.py 내부에서 삼성전자 날짜 비교 → 평일 공휴일도 차단
         if ((now.hour == 15 and now.minute >= 30) or now.hour > 15) and not self.has_executed_s_class_scan:
             if now.weekday() >= 5:  # 토(5), 일(6) — 주말 1차 차단
-                write_log(f"[@NH-Sniper] 주말 감지 — S-Class 스캔 건너뜀 ({now.strftime('%A')})")
+                write_log(f"[@NH-Sniper] 주말 감지 - S-Class 스캔 건너뜀 ({now.strftime('%A')})")
                 self.has_executed_s_class_scan = True
             else:
                 # 평일 공휴일은 brokers.py 삼성전자 날짜 비교로 내부 차단됨

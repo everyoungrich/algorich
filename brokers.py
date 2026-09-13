@@ -464,7 +464,9 @@ class KISBroker(BaseBroker):
                 data = res.json()
                 if data.get("rt_cd") == "0":
                     name = data.get("output", {}).get("bstp_kor_isnm", "") or ""
-                    return name.strip() or "기타"
+                    # cp949 인코딩 불가 문자(em dash 등) 제거
+                    name = name.encode('cp949', errors='replace').decode('cp949').strip()
+                    return name or "기타"
         except Exception as e:
             write_log(f"[get_sector_for_stock] {code} 조회 오류: {e}")
         return "기타"
@@ -829,7 +831,7 @@ class KISBroker(BaseBroker):
                 sector_map[_code] = self.get_sector_for_stock(_code)
                 time.sleep(0.3)
         leading_sectors: dict = self.analyze_sector_dominance(raw_list, sector_map)
-        write_log(f"[섹터 조회] 완료 — 주도 섹터: {list(leading_sectors.keys())}")
+        write_log(f"[섹터 조회] 완료 - 주도 섹터: {list(leading_sectors.keys())}")
 
         # ── 2차 필터: 52주 신고가 ─────────────────────────────────────────
         # 대시보드 표시용: 등락률 10% 이상 '전체'의 신고가 OX를 검증해 audit에 기록.

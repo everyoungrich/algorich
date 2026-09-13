@@ -11,7 +11,14 @@ if not errorlevel 1 goto already
 
 echo [%DATE% %TIME%] AlgoRich bot starting... >> C:\Algorich\start_bot.log
 python trader_final.py >> C:\Algorich\start_bot_stdout.log 2>&1
-echo [%DATE% %TIME%] AlgoRich bot exited (code %ERRORLEVEL%). >> C:\Algorich\start_bot.log
+set EXIT_CODE=%ERRORLEVEL%
+if %EXIT_CODE% neq 0 (
+    echo [%DATE% %TIME%] AlgoRich bot exited (code %EXIT_CODE%). >> C:\Algorich\start_bot.log
+    echo [%DATE% %TIME%] ERROR: exit code %EXIT_CODE% - check start_bot_stdout.log >> C:\Algorich\start_bot.log
+    python -c "import os,sys,dotenv; dotenv.load_dotenv(override=True); missing=[k for k in ['KIS_REAL_APP_KEY','KIS_REAL_APP_SECRET','KIS_MOCK_APP_KEY','KIS_MOCK_APP_SECRET'] if not os.getenv(k)]; print('missing_vars='+str(missing))" >> C:\Algorich\start_bot.log 2>&1
+) else (
+    echo [%DATE% %TIME%] AlgoRich bot exited (code %EXIT_CODE%). >> C:\Algorich\start_bot.log
+)
 exit /b 0
 
 :already

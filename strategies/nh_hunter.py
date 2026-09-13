@@ -100,10 +100,10 @@ class NHHunterStrategy(BaseStrategy):
         try:
             result = self.broker.get_index_above_ma5(index_code)
         except AttributeError:
-            write_log(f"[NH-Hunter] broker.get_index_above_ma5 미구현 — 시황 조건 무시")
+            write_log(f"[NH-Hunter] broker.get_index_above_ma5 미구현 - 시황 조건 무시")
 
         if result is None:
-            write_log(f"[NH-Hunter] 시황 조회 실패({index_code}) — 매수 허용(폴백)")
+            write_log(f"[NH-Hunter] 시황 조회 실패({index_code}) - 매수 허용(폴백)")
             result = True   # API 실패 시 매수 허용
 
         label = "코스피" if index_code == "0001" else "코스닥"
@@ -175,7 +175,7 @@ class NHHunterStrategy(BaseStrategy):
             else:
                 write_log(
                     f"[NH-Hunter 관망] {name}({code}) "
-                    f"{profit_rt:+.2f}% — 장 중 +15%/-5% 모니터링"
+                    f"{profit_rt:+.2f}% - 장 중 +15%/-5% 모니터링"
                 )
             time.sleep(0.3)
 
@@ -338,7 +338,7 @@ class NHHunterStrategy(BaseStrategy):
 
             # 상한가 제외 플래그
             if stock.get("is_upper_limit"):
-                write_log(f"[NH-Hunter 제외] {name}({code}) 상한가 — 종가베팅 불가")
+                write_log(f"[NH-Hunter 제외] {name}({code}) 상한가 - 종가베팅 불가")
                 continue
 
             # 현재가 조회
