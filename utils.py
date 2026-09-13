@@ -349,6 +349,37 @@ class GoogleSheetsManager:
         except Exception as e:
             write_log(f"[log_ma200_trend_signal 실패] {code}: {repr(e)}")
 
+    def update_ma200_trend_signal(self, code, executed=False, remark=""):
+        """MA200_TREND: 15:15 관측 단계에서 이미 기록해 둔 오늘자 신호 행을 찾아
+        실행여부/비고 칸만 갱신한다 (새 행을 추가하지 않음).
+        최종선정/매수실행 단계에서 log_ma200_trend_signal()로 새 행을 또 남기면
+        같은 종목이 하루에 2줄(관측 + 최종선정)로 중복 노출되고, 두 번째 행은
+        MA20/MA200을 다시 계산하지 않아 0으로 남는 문제가 있어 이 함수로 대체한다."""
+        if not self.initialized:
+            return
+        try:
+            sheet = self.get_ma200_trend_signal_sheet()
+            now_str = datetime.now().strftime("%Y-%m-%d")
+            records = sheet.get_all_records()
+            target_idx = None
+            for idx, row in enumerate(records):
+                if str(row.get("날짜", "")) == now_str and str(row.get("종목코드", "")).zfill(6) == code:
+                    target_idx = idx  # 동일 종목이 여러 번 관측됐으면 가장 최근(마지막) 행을 갱신
+            if target_idx is not None:
+                row_index = target_idx + 2  # 헤더(1행) + 0-based → 1-based 보정
+                sheet.update(f"H{row_index}:I{row_index}",
+                             [["Y" if executed else "N", remark]],
+                             value_input_option='USER_ENTERED')
+            else:
+                # 안전장치: 관측 행을 못 찾은 이례적 상황에서는 새로 추가
+                write_log(f"[update_ma200_trend_signal] {code} 관측 행을 찾지 못해 신규 추가")
+                sheet.append_row([
+                    now_str, code, "", "", 0, 0, 0,
+                    "Y" if executed else "N", remark,
+                ], value_input_option='USER_ENTERED')
+        except Exception as e:
+            write_log(f"[update_ma200_trend_signal 실패] {code}: {repr(e)}")
+
     def get_ma200_trend_universe(self, months=6):
         """MA200_TREND 매수 유니버스: 최근 N개월 1_Scan_Audit_Log 중 등락률10%통과==Y 종목을 코드 기준 중복 제거해 반환.
         새 시트/구조 없이 기존 1_Scan_Audit_Log(오늘의 주도주/히스토리 탭과 동일 소스)만 재사용."""

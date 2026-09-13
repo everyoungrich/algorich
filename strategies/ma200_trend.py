@@ -349,9 +349,9 @@ class MA200TrendStrategy(BaseStrategy):
                 write_log(f"[MA200_TREND 관측-매수선정] {name}({code}) {qty}주 매수 선정"
                           f"(DRY_RUN, 미실행) ({cand['signal_type']})")
                 if self.gs_manager:
-                    self.gs_manager.log_ma200_trend_signal(
-                        code, name, cand["signal_type"], cand["price"], 0, 0,
-                        executed=False, remark="DRY_RUN 최종선정(미실행)",
+                    # 15:15 관측 단계에서 이미 남긴 행을 갱신 (새 행 추가 X → 중복 노출 방지)
+                    self.gs_manager.update_ma200_trend_signal(
+                        code, executed=False, remark="DRY_RUN 최종선정(미실행)",
                     )
                 continue
 
@@ -361,9 +361,9 @@ class MA200TrendStrategy(BaseStrategy):
                 if self.gs_manager:
                     self.gs_manager.log_buy(trade_id, code, name, cand["price"], qty,
                                              "MA200_TREND", self.mode, remark=cand["signal_type"])
-                    self.gs_manager.log_ma200_trend_signal(
-                        code, name, cand["signal_type"], cand["price"], 0, 0,
-                        executed=True, remark="매수실행",
+                    # 15:15 관측 단계에서 이미 남긴 행을 갱신 (새 행 추가 X → 중복 노출 방지)
+                    self.gs_manager.update_ma200_trend_signal(
+                        code, executed=True, remark="매수실행",
                     )
                 self.bought_today.add(code)
                 self.new_entries_today += 1
