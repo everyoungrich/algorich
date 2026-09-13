@@ -1029,7 +1029,7 @@ function renderHistoryMonth(month) {
             const name   = esc(r.name||'');
             const sector = getSector(r.name||'');
             const secTag = sector ? '<span class="sec-tag">' + sector + '</span>' : '';
-            return '<tr>' +
+            return '<tr data-code="' + code + '" data-name="' + name + '" data-price="0" data-rate="' + rate + '">' +
                 '<td><div>' + name + '</div><div class="sub-text">' + code + secTag + '</div></td>' +
                 '<td><span class="up">' + fmtPct(rate) + '</span></td>' +
                 '<td style="color:var(--sub);font-size:11px">' + fmtAmt(r.amt100m) + '</td>' +
@@ -2303,6 +2303,7 @@ function _delegateRowClick(containerId) {
 }
 _delegateRowClick('scan-audit-table');
 _delegateRowClick('lead-stock-table');
+_delegateRowClick('hist-table');
 _delegateRowClick('holdings-table');
 _delegateRowClick('journal-table');
 

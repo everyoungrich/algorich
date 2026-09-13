@@ -399,12 +399,13 @@ class MA200TrendStrategy(BaseStrategy):
             self.monitor_take_profit()
 
         # 15:15 (1회) — 보유 종목 종가 기준 이탈 체크 + 신규 매수 후보 탐색
+        # 참고: NH-Sniper와 달리 코스피 급락(당일 저가 근접) 여부와 무관하게 항상 실행한다.
+        # - 청산 체크(MA20/MA200 이탈)는 이 전략의 핵심 손절 방어선이라 급락일에도 미뤄서는 안 됨.
+        # - 신규 매수 조건(BREAKOUT/SUPPORT) 자체가 "금일 종가 > MA200"을 요구하므로,
+        #   실제 급락일에는 이 조건을 통과하기 어려워 별도 스킵 로직 없이도 과열 매수가 자연히 걸러짐.
         if now.hour == 15 and now.minute == 15 and not self.has_executed_entry_check:
             write_log(f"[@MA200_TREND] 15:15 진입/청산 체크 시작 ({now.strftime('%H:%M:%S')})")
-            if not self.broker.check_market_crash():
-                self.run_entry_check()
-            else:
-                write_log("[MA200_TREND] 코스피 급락 감지 - 당일 매수/청산 체크 스킵 (NH-Sniper와 동일 정책)")
+            self.run_entry_check()
             self.has_executed_entry_check = True
 
         # 15:20 (1회) — 시장가 매수 실행
