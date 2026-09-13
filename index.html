@@ -951,14 +951,16 @@ function _renderMA200TrendTab(info, el) {
     }
     const rows = _ma200TrendRows.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 100);
     const rowsHtml = rows.map(r => {
-        return `<div class="cand-row">
+        const code = esc(String(r.code||'').replace(/[^0-9A-Za-z]/g,''));
+        const name = esc(r.name);
+        return `<div class="cand-row" data-code="${code}" data-name="${name}" data-price="${r.price||0}" data-rate="0">
             <div>
                 <div class="cand-name-wrap">
-                    <span class="cand-name">${esc(r.name)}</span>
+                    <span class="cand-name">${name}</span>
                     <span class="sec-tag">${esc(r.signalType)}</span>
                     ${r.executed ? '<span class="sc-badge sc-s">매수실행</span>' : ''}
                 </div>
-                <div class="cand-sub">${esc(r.code)} · ${esc(r.date)}${r.remark ? ' · ' + esc(r.remark) : ''}</div>
+                <div class="cand-sub">${code} · ${esc(r.date)}${r.remark ? ' · ' + esc(r.remark) : ''}</div>
             </div>
             <div class="cand-rate-col">
                 <span style="font-size:13px;font-weight:700">${fmtNum(r.price)}원</span>
@@ -981,6 +983,16 @@ function _renderMA200TrendTab(info, el) {
                 : `<div class="strat-empty">아직 관측된 매수신호가 없습니다<br><span style="color:var(--sub);font-size:11px">봇이 매일 09:05 유니버스 스캔, 15:15 신호 체크를 수행합니다</span></div>`
             }
         </div>`;
+
+    // 클릭 이벤트 위임 (cand-row → 차트 모달, MA200선을 기본으로 켜서 근접 여부를 바로 확인 가능하게)
+    el.querySelectorAll('.cand-row[data-code]').forEach(row => {
+        row.addEventListener('click', () => {
+            _maVisible.MA200 = true;
+            document.querySelector('.ma-btn[data-ma="MA200"]')?.classList.add('active');
+            openChartModal(row.dataset.code||'', row.dataset.name||'',
+                parseFloat(row.dataset.price)||0, parseFloat(row.dataset.rate)||0, 0, 0, info.name);
+        });
+    });
 }
 
 function renderHistoryMonthTabs() {
